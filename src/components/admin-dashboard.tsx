@@ -574,7 +574,9 @@ function JobTrackerView({
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-white font-medium">{student.full_name}</p>
-                        <p className="text-xs text-surface-500">{student.roll_number} • {student.phone}</p>
+                        <p className="text-xs text-surface-500">
+                          {student.roll_number ? `${student.roll_number} • ` : ""}{student.phone}
+                        </p>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-surface-400">{student.department}</td>
@@ -699,7 +701,7 @@ function StudentsView({
             <tbody className="divide-y divide-surface-700/50">
               {filtered.map((s) => (
                 <tr key={s.id} className="hover:bg-surface-700/30 transition-colors cursor-pointer" onClick={() => onSelectStudent(s.id)}>
-                  <td className="px-4 py-3 text-surface-300 font-mono text-xs">{s.roll_number}</td>
+                  <td className="px-4 py-3 text-surface-300 font-mono text-xs">{s.roll_number || "—"}</td>
                   <td className="px-4 py-3">
                     <div>
                       <p className="text-white font-medium">{s.full_name}</p>

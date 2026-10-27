@@ -125,7 +125,7 @@ export default function StudentDashboardView() {
               <div className="hidden sm:flex items-center gap-2 rounded-xl bg-surface-800 px-3 py-2">
                 <User className="h-4 w-4 text-primary-400" />
                 <span className="text-sm text-surface-300">{profile.full_name}</span>
-                <span className="text-xs text-surface-500">({profile.roll_number})</span>
+                <span className="text-xs text-surface-500">({profile.roll_number || profile.department})</span>
               </div>
               <button
                 onClick={handleLogout}

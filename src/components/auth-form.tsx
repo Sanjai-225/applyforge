@@ -8,10 +8,7 @@ import {
   Lock,
   User,
   Phone,
-  Hash,
   GraduationCap,
-  Calendar,
-  BookOpen,
   Eye,
   EyeOff,
   ArrowRight,
@@ -127,10 +124,7 @@ export function RegisterForm() {
     email: "",
     phone: "",
     password: "",
-    rollNumber: "",
     department: "CSE" as string,
-    batchYear: "2027",
-    cgpa: "",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -150,10 +144,7 @@ export function RegisterForm() {
       email: form.email,
       phone: form.phone,
       password: form.password,
-      rollNumber: form.rollNumber,
       department: form.department,
-      batchYear: parseInt(form.batchYear),
-      cgpa: form.cgpa ? parseFloat(form.cgpa) : 0,
     });
 
     if (res.ok && res.data) {
@@ -202,15 +193,6 @@ export function RegisterForm() {
       placeholder: "Min 8 characters",
       required: true,
     },
-    {
-      id: "reg-roll",
-      label: "Roll Number",
-      field: "rollNumber",
-      type: "text",
-      icon: <Hash className="h-4 w-4" />,
-      placeholder: "711523BCS042",
-      required: true,
-    },
   ];
 
   return (
@@ -248,64 +230,26 @@ export function RegisterForm() {
           </div>
         ))}
 
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <label htmlFor="reg-dept" className="block text-sm font-medium text-surface-300">
-              Department
-            </label>
-            <div className="relative">
-              <GraduationCap className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-              <select
-                id="reg-dept"
-                value={form.department}
-                onChange={(e) => update("department", e.target.value)}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-4 py-3 text-sm text-white transition-all hover:border-surface-500 focus:border-primary-500 appearance-none cursor-pointer"
-              >
-                {DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="reg-batch" className="block text-sm font-medium text-surface-300">
-              Batch Year
-            </label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-              <input
-                id="reg-batch"
-                type="number"
-                required
-                min="2020"
-                max="2035"
-                value={form.batchYear}
-                onChange={(e) => update("batchYear", e.target.value)}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-4 py-3 text-sm text-white transition-all hover:border-surface-500 focus:border-primary-500"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="reg-cgpa" className="block text-sm font-medium text-surface-300">
-              CGPA
-            </label>
-            <div className="relative">
-              <BookOpen className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-              <input
-                id="reg-cgpa"
-                type="number"
-                step="0.01"
-                min="0"
-                max="10"
-                value={form.cgpa}
-                onChange={(e) => update("cgpa", e.target.value)}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-4 py-3 text-sm text-white placeholder-surface-500 transition-all hover:border-surface-500 focus:border-primary-500"
-                placeholder="8.50"
-              />
+        <div className="space-y-1.5">
+          <label htmlFor="reg-dept" className="block text-sm font-medium text-surface-300">
+            Department
+          </label>
+          <div className="relative">
+            <GraduationCap className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
+            <select
+              id="reg-dept"
+              value={form.department}
+              onChange={(e) => update("department", e.target.value)}
+              className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-10 py-3 text-sm text-white transition-all hover:border-surface-500 focus:border-primary-500 appearance-none cursor-pointer"
+            >
+              {DEPARTMENTS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-surface-500 text-xs">
+              ▼
             </div>
           </div>
         </div>

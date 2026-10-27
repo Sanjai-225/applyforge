@@ -3,13 +3,13 @@ import { DEPARTMENTS, PRIORITIES, APP_STATUSES, ISSUE_CATEGORIES } from "./types
 
 /* ─── Auth ───────────────────────────────────────────────── */
 export const RegisterSchema = z.object({
-  fullName: z.string().min(2).max(100),
-  email: z.string().email(),
-  phone: z.string().min(10).max(15),
-  password: z.string().min(8),
-  rollNumber: z.string().min(1).max(30),
+  fullName: z.string().min(2, "Name must be at least 2 characters").max(100),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().min(10, "Phone number must be at least 10 digits").max(15),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   department: z.enum(DEPARTMENTS),
-  batchYear: z.coerce.number().int().min(2020).max(2035),
+  rollNumber: z.string().max(30).optional(),
+  batchYear: z.coerce.number().int().optional(),
   cgpa: z.coerce.number().min(0).max(10).optional().default(0),
 });
 export type RegisterInput = z.infer<typeof RegisterSchema>;

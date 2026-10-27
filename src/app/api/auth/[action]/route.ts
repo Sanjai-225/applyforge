@@ -49,10 +49,10 @@ async function handleRegister(body: unknown) {
     full_name: data.fullName,
     email: data.email,
     phone: data.phone,
-    roll_number: data.rollNumber,
+    roll_number: data.rollNumber || null,
     department: data.department,
-    batch_year: data.batchYear,
-    cgpa: data.cgpa || 0,
+    batch_year: data.batchYear || null,
+    cgpa: data.cgpa ?? 0,
     is_active: true,
   });
 
