@@ -31,20 +31,35 @@ export async function POST(
 async function handleRegister(body: unknown) {
   const data = RegisterSchema.parse(body);
   const supabase = await createServerSupabase();
+  const admin = createAdminSupabase();
 
-  // Create auth user
-  const { data: authData, error: authErr } = await supabase.auth.signUp({
+  // Try creating with admin API first (which auto-confirms email)
+  let userId: string;
+  const { data: authData, error: authErr } = await admin.auth.admin.createUser({
     email: data.email,
     password: data.password,
+    email_confirm: true,
   });
 
-  if (authErr) throw badRequest(authErr.message);
-  if (!authData.user) throw badRequest("Failed to create user");
+  if (authErr) {
+    console.warn("⚠️ admin.createUser failed, falling back to signUp:", authErr.message);
+    const { data: fallbackAuth, error: fallbackErr } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+    });
+    if (fallbackErr) {
+      console.error("❌ signUp failed:", fallbackErr.message);
+      throw badRequest(fallbackErr.message);
+    }
+    if (!fallbackAuth.user) throw badRequest("Failed to create user account");
+    userId = fallbackAuth.user.id;
+  } else {
+    userId = authData.user.id;
+  }
 
-  // Create profile using admin client to bypass RLS
-  const admin = createAdminSupabase();
-  const { error: profileErr } = await admin.from("profiles").insert({
-    id: authData.user.id,
+  // Create or upsert profile
+  const { error: profileErr } = await admin.from("profiles").upsert({
+    id: userId,
     role: "student",
     full_name: data.fullName,
     email: data.email,
@@ -56,7 +71,16 @@ async function handleRegister(body: unknown) {
     is_active: true,
   });
 
-  if (profileErr) throw badRequest(profileErr.message);
+  if (profileErr) {
+    console.error("❌ Profile insertion failed:", profileErr.message);
+    throw badRequest(profileErr.message);
+  }
+
+  // Establish session cookies so user is immediately logged in
+  await supabase.auth.signInWithPassword({
+    email: data.email,
+    password: data.password,
+  });
 
   return ok({ redirect: "/dashboard" });
 }
@@ -71,7 +95,13 @@ async function handleLogin(body: unknown) {
       password: data.password,
     });
 
-  if (authErr) throw unauthorized("Invalid email or password");
+  if (authErr) {
+    console.error("❌ Login failed for", data.email, ":", authErr.message);
+    if (authErr.message.toLowerCase().includes("email not confirmed")) {
+      throw unauthorized("Email not confirmed. Please check your inbox or ask placement officer to confirm.");
+    }
+    throw unauthorized("Invalid email or password");
+  }
 
   // Get profile to determine role
   const admin = createAdminSupabase();
