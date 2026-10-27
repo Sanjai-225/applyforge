@@ -234,3 +234,28 @@ export async function pushToWhatsAppWebhook(
     return false;
   }
 }
+
+/* ─── Send Single Generic Email Notification ──────────── */
+export async function sendEmailNotification({
+  to,
+  subject,
+  html,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ sent: boolean }> {
+  const transport = getTransport();
+  const from = process.env.SMTP_FROM || "ApplyForge <noreply@applyforge.app>";
+  if (!transport) {
+    console.log(`[Email] Simulating email to ${to}: ${subject}`);
+    return { sent: true };
+  }
+  try {
+    await transport.sendMail({ from, to, subject, html });
+    return { sent: true };
+  } catch (err) {
+    console.error(`[Email] Failed to send email to ${to}:`, err);
+    return { sent: false };
+  }
+}

@@ -53,8 +53,6 @@ async function main() {
     phone,
     roll_number: null,
     department: "ADMIN",
-    batch_year: null,
-    cgpa: null,
     is_active: true,
   });
 

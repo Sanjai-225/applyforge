@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { get, post } from "@/lib/client";
-import type { StudentDashboard, AppStatus, JobApplication, Job } from "@/lib/types";
+import type { StudentDashboard, AppStatus, JobApplication, Job, IssueCategory } from "@/lib/types";
 import {
   KPICard,
   PriorityBadge,
@@ -12,7 +12,9 @@ import {
   FullPageSpinner,
   EmptyState,
   Modal,
+  Drawer,
 } from "./shared";
+import { NotificationInboxDrawer, StudentHelpChatDrawer } from "./student-inbox";
 import {
   Briefcase,
   CheckCircle2,
@@ -21,12 +23,21 @@ import {
   TrendingUp,
   ExternalLink,
   Send,
-  ChevronDown,
   LogOut,
   User,
   Filter,
   XCircle,
   Loader2,
+  Bell,
+  MessageSquare,
+  Sparkles,
+  Phone,
+  GraduationCap,
+  ShieldCheck,
+  Calendar,
+  DollarSign,
+  MapPin,
+  Check,
 } from "lucide-react";
 
 const PRIORITY_ORDER: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
@@ -39,14 +50,31 @@ export default function StudentDashboardView() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FilterTab>("ALL");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // Drawers & Modals
+  const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
+  const [showHelpChatDrawer, setShowHelpChatDrawer] = useState(false);
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   const [actionModal, setActionModal] = useState<{
     app: JobApplication & { job: Job };
+    mode: "apply" | "trouble";
   } | null>(null);
+
+  // Form states for modals
+  const [appRef, setAppRef] = useState("");
+  const [issueCategory, setIssueCategory] = useState<IssueCategory>("PORTAL_OR_OTP_ERROR");
+  const [issueNote, setIssueNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Profile Edit State
+  const [newPhone, setNewPhone] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const fetchData = useCallback(async () => {
     const res = await get<StudentDashboard>("/api/snapshot?scope=student");
     if (res.ok && res.data) {
       setData(res.data);
+      setNewPhone(res.data.profile.phone || "");
     }
     setLoading(false);
   }, []);
@@ -67,10 +95,59 @@ export default function StudentDashboardView() {
     fetchData();
   }
 
+  async function handleUpdateStatus(
+    jobId: string,
+    status: AppStatus,
+    payload?: { issueCategory?: IssueCategory; issueNote?: string; applicationRef?: string }
+  ) {
+    setSubmitting(true);
+    const res = await post("/api/command", {
+      type: "UPDATE_APPLICATION_STATUS",
+      jobId,
+      status,
+      issueCategory: payload?.issueCategory,
+      issueNote: payload?.issueNote,
+      applicationRef: payload?.applicationRef,
+    });
+
+    if (res.ok) {
+      setToast({
+        message: status === "APPLIED" ? "Great job! Application marked as completed." : "Status updated.",
+        type: "success",
+      });
+      setActionModal(null);
+      setAppRef("");
+      setIssueNote("");
+      fetchData();
+    } else {
+      setToast({ message: res.error || "Failed to update status", type: "error" });
+    }
+    setSubmitting(false);
+  }
+
+  async function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingProfile(true);
+    const res = await post("/api/command", {
+      type: "UPDATE_STUDENT_PROFILE",
+      phone: newPhone,
+    });
+    if (res.ok) {
+      setToast({ message: "Profile contact updated!", type: "success" });
+      setShowProfileDrawer(false);
+      fetchData();
+    } else {
+      setToast({ message: res.error || "Failed to update profile", type: "error" });
+    }
+    setSavingProfile(false);
+  }
+
   if (loading) return <FullPageSpinner />;
   if (!data) return null;
 
-  const { profile, kpis, applications } = data;
+  const { profile, kpis, applications, notifications = [], help_messages = [] } = data;
+
+  const unreadNotifCount = notifications.filter((n) => !n.is_read).length;
 
   // Sort by priority then deadline
   const sortedApps = [...applications].sort((a, b) => {
@@ -82,7 +159,7 @@ export default function StudentDashboardView() {
     return da - db;
   });
 
-  // Filter
+  // Filter tabs
   const filteredApps = sortedApps.filter((a) => {
     if (tab === "ALL") return true;
     if (tab === "NOT_APPLIED") return a.status === "NOT_APPLIED";
@@ -92,14 +169,14 @@ export default function StudentDashboardView() {
   });
 
   const tabs: { key: FilterTab; label: string; count: number }[] = [
-    { key: "ALL", label: "All Jobs", count: applications.length },
-    { key: "NOT_APPLIED", label: "Pending Action", count: kpis.not_applied },
-    { key: "APPLIED", label: "Applied", count: kpis.applied },
-    { key: "TROUBLE", label: "Issues", count: kpis.facing_trouble + kpis.not_eligible },
+    { key: "ALL", label: "All Opportunities", count: applications.length },
+    { key: "NOT_APPLIED", label: "Action Required", count: kpis.not_applied },
+    { key: "APPLIED", label: "Submitted", count: kpis.applied },
+    { key: "TROUBLE", label: "Issues Reported", count: kpis.facing_trouble + kpis.not_eligible },
   ];
 
   return (
-    <div className="min-h-screen bg-surface-950">
+    <div className="min-h-screen bg-mesh text-surface-100 flex flex-col">
       {toast && (
         <Toast
           message={toast.message}
@@ -108,92 +185,164 @@ export default function StudentDashboardView() {
         />
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 glass border-b border-surface-700">
+      {/* ─── Top Glass Navigation ──────────────────────── */}
+      <header className="sticky top-0 z-40 glass border-b border-white/10 backdrop-blur-2xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex h-20 items-center justify-between">
+            {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 shadow-lg shadow-primary-900/30">
-                <Briefcase className="h-5 w-5 text-white" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary-600 via-primary-500 to-pink-500 shadow-lg shadow-primary-950/40">
+                <Briefcase className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white">ApplyForge</h1>
-                <p className="text-[10px] text-surface-400 -mt-0.5">Student Dashboard</p>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-extrabold text-white tracking-wide">ApplyForge</h1>
+                  <span className="rounded-full bg-primary-500/25 border border-primary-500/40 px-2 py-0.5 text-[10px] font-bold text-primary-200">
+                    Student Portal
+                  </span>
+                </div>
+                <p className="text-xs text-surface-400">Campus Recruitment & Application Hub</p>
               </div>
             </div>
+
+            {/* Quick Action Buttons */}
             <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 rounded-xl bg-surface-800 px-3 py-2">
-                <User className="h-4 w-4 text-primary-400" />
-                <span className="text-sm text-surface-300">{profile.full_name}</span>
-                <span className="text-xs text-surface-500">({profile.roll_number || profile.department})</span>
-              </div>
+              {/* Notification Bell */}
+              <button
+                onClick={() => setShowNotificationDrawer(true)}
+                className="relative rounded-2xl p-2.5 bg-surface-800/60 border border-white/10 text-surface-300 hover:text-white hover:bg-surface-700 transition-all"
+                title="Notifications & Reminders"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Help & Support Chat Widget */}
+              <button
+                onClick={() => setShowHelpChatDrawer(true)}
+                className="flex items-center gap-2 rounded-2xl btn-vibrant-emerald px-4 py-2.5 text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/50"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span className="hidden sm:inline">Contact Placement Officer</span>
+              </button>
+
+              {/* Student Profile Pill */}
+              <button
+                onClick={() => setShowProfileDrawer(true)}
+                className="hidden md:flex items-center gap-2.5 rounded-2xl bg-surface-900/60 border border-white/10 px-3.5 py-2 hover:border-primary-500/40 transition-all"
+              >
+                <div className="h-7 w-7 rounded-xl bg-gradient-to-tr from-primary-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                  {profile.full_name.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-white leading-tight">{profile.full_name}</p>
+                  <p className="text-[10px] text-cyan-300 font-medium">
+                    {profile.department} {profile.roll_number && `• ${profile.roll_number}`}
+                  </p>
+                </div>
+              </button>
+
+              {/* Logout */}
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 rounded-xl bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
+                className="rounded-2xl p-2.5 bg-surface-800/60 border border-white/10 text-surface-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                title="Sign out"
               >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Logout</span>
+                <LogOut className="h-5 w-5" />
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+      {/* ─── Main Content Container ─────────────────────── */}
+      <main className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-8 flex-1 space-y-8 animate-fadeIn">
+        {/* Welcome Banner */}
+        <div className="rounded-3xl glass-card border border-white/10 p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+          <div className="space-y-2 z-10">
+            <span className="rounded-full bg-primary-500/20 border border-primary-500/30 px-3 py-1 text-xs font-bold text-primary-300 inline-flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-primary-400" />
+              Welcome back, {profile.full_name}!
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Stay ahead in your campus placements.
+            </h2>
+            <p className="text-xs sm:text-sm text-surface-300 max-w-xl">
+              Track eligible placement opportunities, submit external portal applications, and report any blockers directly to the placement office.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 z-10 w-full md:w-auto">
+            <div className="rounded-2xl bg-surface-900/60 border border-white/5 p-4 text-center w-full sm:w-auto">
+              <p className="text-xs font-semibold uppercase tracking-wider text-surface-400">Completion</p>
+              <p className="text-3xl font-black text-white mt-1">{kpis.completion_pct}%</p>
+              <div className="h-2 w-32 rounded-full bg-surface-800 mt-2 overflow-hidden mx-auto">
+                <div
+                  className="h-full bg-gradient-to-r from-primary-500 to-emerald-400"
+                  style={{ width: `${kpis.completion_pct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute -top-16 -right-16 h-48 w-48 rounded-full bg-primary-600/15 blur-3xl pointer-events-none" />
+        </div>
+
+        {/* KPI Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
-            label="Total Jobs"
+            label="Total Opportunities"
             value={kpis.total_jobs}
+            subtitle="Matched to your branch"
             icon={<Briefcase className="h-5 w-5" />}
             color="primary"
           />
           <KPICard
-            label="Applied"
-            value={kpis.applied}
-            icon={<CheckCircle2 className="h-5 w-5" />}
-            color="green"
-          />
-          <KPICard
-            label="Pending"
+            label="Action Required"
             value={kpis.not_applied}
+            subtitle="Pending submission"
             icon={<Clock className="h-5 w-5" />}
             color="yellow"
+            onClick={() => setTab("NOT_APPLIED")}
           />
           <KPICard
-            label="Trouble"
+            label="Applications Completed"
+            value={kpis.applied}
+            subtitle="Verified submissions"
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            color="green"
+            onClick={() => setTab("APPLIED")}
+          />
+          <KPICard
+            label="Issues Reported"
             value={kpis.facing_trouble}
+            subtitle="Under placement cell review"
             icon={<AlertTriangle className="h-5 w-5" />}
             color="red"
-          />
-          <KPICard
-            label="Completion"
-            value={`${kpis.completion_pct}%`}
-            icon={<TrendingUp className="h-5 w-5" />}
-            color="primary"
-            subtitle={`${kpis.applied} of ${kpis.total_jobs} jobs`}
+            onClick={() => setTab("TROUBLE")}
           />
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-          <Filter className="h-4 w-4 text-surface-500 flex-shrink-0" />
+        {/* Tab Filters */}
+        <div className="flex items-center gap-2 border-b border-white/10 pb-4 overflow-x-auto custom-scroll">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs sm:text-sm font-bold transition-all shrink-0 ${
                 tab === t.key
-                  ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
-                  : "bg-surface-800 text-surface-400 border border-surface-700 hover:bg-surface-700 hover:text-surface-300"
+                  ? "bg-primary-600/30 text-primary-200 border border-primary-500/50 shadow-lg shadow-primary-950/40"
+                  : "bg-surface-900/40 text-surface-400 hover:text-white hover:bg-surface-800/60 border border-transparent"
               }`}
             >
-              {t.label}
+              <span>{t.label}</span>
               <span
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  tab === t.key
-                    ? "bg-primary-500/20 text-primary-300"
-                    : "bg-surface-700 text-surface-500"
+                className={`rounded-full px-2 py-0.5 text-xs font-extrabold ${
+                  tab === t.key ? "bg-primary-500 text-white" : "bg-surface-800 text-surface-400"
                 }`}
               >
                 {t.count}
@@ -202,329 +351,335 @@ export default function StudentDashboardView() {
           ))}
         </div>
 
-        {/* Job Cards */}
+        {/* Applications Board */}
         {filteredApps.length === 0 ? (
           <EmptyState
-            icon={<Briefcase className="h-8 w-8" />}
-            title="No jobs found"
-            description="No jobs match your current filter selection."
+            icon={<Briefcase className="h-10 w-10 text-primary-400" />}
+            title="No drives in this tab"
+            description="You are currently up to date on all placement listings matching this criteria."
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredApps.map((app, idx) => (
-              <JobCard
-                key={app.id}
-                app={app}
-                index={idx}
-                onClickJob={handleClickJob}
-                onAction={() => setActionModal({ app })}
-              />
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredApps.map((app) => {
+              const { job } = app;
+              if (!job) return null;
+
+              const isApplied = app.status === "APPLIED";
+              const isTrouble = app.status === "FACING_TROUBLE";
+
+              return (
+                <div
+                  key={app.id}
+                  className={`rounded-3xl glass-card border p-6 flex flex-col justify-between transition-all ${
+                    isApplied
+                      ? "border-emerald-500/30 bg-emerald-950/10"
+                      : isTrouble
+                      ? "border-rose-500/30 bg-rose-950/10"
+                      : "border-white/10"
+                  }`}
+                >
+                  <div className="space-y-4">
+                    {/* Header: Company & Priority */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-primary-400 uppercase tracking-wider">
+                          {job.company_name}
+                        </span>
+                        <h3 className="text-lg font-bold text-white mt-0.5 leading-snug">{job.title}</h3>
+                      </div>
+                      <PriorityBadge priority={job.priority} />
+                    </div>
+
+                    {/* Metadata chips */}
+                    <div className="space-y-2 text-xs text-surface-300">
+                      {job.package_ctc && (
+                        <p className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4 text-emerald-400 shrink-0" />
+                          <span className="font-semibold text-emerald-300">{job.package_ctc}</span>
+                        </p>
+                      )}
+                      {job.location && (
+                        <p className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-rose-400 shrink-0" />
+                          <span>{job.location}</span>
+                        </p>
+                      )}
+                      {job.deadline && (
+                        <p className="flex items-center gap-2 text-amber-300">
+                          <Clock className="h-4 w-4 shrink-0" />
+                          <span>Deadline: {new Date(job.deadline).toLocaleDateString()}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Description */}
+                    {job.description && (
+                      <p className="text-xs text-surface-400 line-clamp-2 leading-relaxed">
+                        {job.description}
+                      </p>
+                    )}
+
+                    {/* Status Badge */}
+                    <div className="pt-2 flex items-center justify-between">
+                      <StatusBadge status={app.status} />
+                      {app.link_clicked_at && (
+                        <span className="text-[11px] text-surface-400">✓ Link opened</span>
+                      )}
+                    </div>
+
+                    {/* Issue Note display if in trouble */}
+                    {isTrouble && (
+                      <div className="rounded-2xl bg-rose-950/30 border border-rose-500/20 p-3 text-xs space-y-1">
+                        <p className="font-bold text-rose-300">Issue: {app.issue_category}</p>
+                        {app.issue_note && <p className="text-rose-200/80">{app.issue_note}</p>}
+                        <button
+                          onClick={() => setShowHelpChatDrawer(true)}
+                          className="text-xs font-semibold text-rose-400 hover:underline pt-1 block"
+                        >
+                          Chat with placement cell regarding this &rarr;
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions Toolbar */}
+                  <div className="mt-6 pt-4 border-t border-white/10 space-y-2">
+                    <button
+                      onClick={() => handleClickJob(job.id, job.application_url)}
+                      className="w-full flex items-center justify-center gap-2 rounded-2xl btn-vibrant-primary px-4 py-3 text-xs sm:text-sm font-bold shadow-md"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open Company Portal
+                    </button>
+
+                    <div className="flex gap-2">
+                      {!isApplied ? (
+                        <button
+                          onClick={() => setActionModal({ app, mode: "apply" })}
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl btn-vibrant-emerald px-3 py-2.5 text-xs font-bold"
+                        >
+                          <Check className="h-4 w-4" />
+                          Mark Applied
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleUpdateStatus(job.id, "NOT_APPLIED")}
+                          className="flex-1 rounded-2xl bg-surface-800 text-surface-400 hover:text-white px-3 py-2.5 text-xs font-semibold"
+                        >
+                          Undo Applied
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => setActionModal({ app, mode: "trouble" })}
+                        className="rounded-2xl bg-surface-800/80 hover:bg-rose-500/20 text-surface-300 hover:text-rose-300 border border-white/5 px-3 py-2.5 text-xs font-semibold transition-colors"
+                        title="Facing portal or OTP issue?"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
 
-      {/* Action Modal */}
-      {actionModal && (
-        <StatusUpdateModal
-          app={actionModal.app}
+      {/* ─── Mark Applied Modal ────────────────────────── */}
+      {actionModal?.mode === "apply" && (
+        <Modal
+          isOpen={true}
           onClose={() => setActionModal(null)}
-          onSuccess={(msg) => {
-            setToast({ message: msg, type: "success" });
-            setActionModal(null);
-            fetchData();
-          }}
-          onError={(msg) => setToast({ message: msg, type: "error" })}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ─── Job Card ─────────────────────────────────────────── */
-function JobCard({
-  app,
-  index,
-  onClickJob,
-  onAction,
-}: {
-  app: JobApplication & { job: Job };
-  index: number;
-  onClickJob: (jobId: string, url: string) => void;
-  onAction: () => void;
-}) {
-  const job = app.job;
-  if (!job) return null;
-
-  const deadline = job.deadline
-    ? new Date(job.deadline).toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })
-    : null;
-
-  const isExpired = job.deadline ? new Date(job.deadline) < new Date() : false;
-
-  return (
-    <div
-      className="group relative rounded-2xl bg-surface-800/50 border border-surface-700 p-5 transition-all duration-300 hover:border-surface-600 hover:shadow-xl hover:shadow-primary-950/20 animate-fadeIn"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
-      {/* Priority + Status */}
-      <div className="flex items-center justify-between mb-3">
-        <PriorityBadge priority={job.priority} />
-        <StatusBadge status={app.status} />
-      </div>
-
-      {/* Company & Role */}
-      <h3 className="text-white font-semibold text-base mb-1 group-hover:text-primary-300 transition-colors">
-        {job.company_name}
-      </h3>
-      <p className="text-surface-400 text-sm mb-3">{job.title}</p>
-
-      {/* Meta */}
-      <div className="flex flex-wrap gap-2 mb-4 text-xs text-surface-500">
-        {job.package_ctc && (
-          <span className="rounded-lg bg-surface-700/50 px-2 py-1">💰 {job.package_ctc}</span>
-        )}
-        {job.location && (
-          <span className="rounded-lg bg-surface-700/50 px-2 py-1">📍 {job.location}</span>
-        )}
-        {deadline && (
-          <span
-            className={`rounded-lg px-2 py-1 ${
-              isExpired
-                ? "bg-red-900/30 text-red-400"
-                : "bg-surface-700/50"
-            }`}
-          >
-            📅 {deadline} {isExpired && "(Expired)"}
-          </span>
-        )}
-      </div>
-
-      {/* Click tracking indicator */}
-      {app.link_clicked_at && (
-        <p className="text-xs text-surface-500 mb-3">
-          🔗 Link opened on{" "}
-          {new Date(app.link_clicked_at).toLocaleDateString("en-IN", {
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
-      )}
-
-      {/* Applied info */}
-      {app.status === "APPLIED" && app.applied_at && (
-        <p className="text-xs text-emerald-400/80 mb-3">
-          ✅ Applied on{" "}
-          {new Date(app.applied_at).toLocaleDateString("en-IN", {
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-          {app.application_ref && ` • Ref: ${app.application_ref}`}
-        </p>
-      )}
-
-      {/* Trouble info */}
-      {app.status === "FACING_TROUBLE" && (
-        <div className="rounded-lg bg-red-900/20 border border-red-800/30 p-2.5 mb-3">
-          <p className="text-xs text-red-300">
-            ⚠️ {app.issue_category?.replace(/_/g, " ")}
-          </p>
-          {app.issue_note && (
-            <p className="text-xs text-red-400/70 mt-1">{app.issue_note}</p>
-          )}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex gap-2 mt-auto">
-        <button
-          onClick={() => onClickJob(job.id, job.application_url)}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-primary-600/20 border border-primary-500/30 px-3 py-2.5 text-xs font-medium text-primary-300 hover:bg-primary-600/30 transition-all"
+          title={`Confirm Application: ${actionModal.app.job.company_name}`}
+          size="sm"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Open Job Link
-        </button>
-        <button
-          onClick={onAction}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-surface-700 border border-surface-600 px-3 py-2.5 text-xs font-medium text-surface-300 hover:bg-surface-600 hover:text-white transition-all"
-        >
-          <Send className="h-3.5 w-3.5" />
-          Update Status
-        </button>
-      </div>
-    </div>
-  );
-}
+          <div className="space-y-4">
+            <p className="text-xs text-surface-300 leading-relaxed">
+              Have you completed the submission on the company&apos;s external portal? You can optionally save your application/registration number below:
+            </p>
 
-/* ─── Status Update Modal ──────────────────────────────── */
-function StatusUpdateModal({
-  app,
-  onClose,
-  onSuccess,
-  onError,
-}: {
-  app: JobApplication & { job: Job };
-  onClose: () => void;
-  onSuccess: (msg: string) => void;
-  onError: (msg: string) => void;
-}) {
-  const [status, setStatus] = useState<AppStatus>(app.status);
-  const [applicationRef, setApplicationRef] = useState(app.application_ref || "");
-  const [issueCategory, setIssueCategory] = useState(app.issue_category || "");
-  const [issueNote, setIssueNote] = useState(app.issue_note || "");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit() {
-    setSaving(true);
-    const payload: Record<string, unknown> = {
-      type: "UPDATE_APPLICATION_STATUS",
-      jobId: app.job_id,
-      status,
-    };
-
-    if (status === "APPLIED" && applicationRef) {
-      payload.applicationRef = applicationRef;
-    }
-    if (status === "FACING_TROUBLE") {
-      payload.issueCategory = issueCategory || "OTHER_ISSUE";
-      payload.issueNote = issueNote;
-    }
-    if (status === "NOT_ELIGIBLE") {
-      payload.issueNote = issueNote;
-    }
-
-    const res = await post("/api/command", payload);
-    if (res.ok) {
-      onSuccess("Status updated successfully!");
-    } else {
-      onError(res.error || "Failed to update status");
-    }
-    setSaving(false);
-  }
-
-  const issueOptions = [
-    { value: "LINK_EXPIRED_OR_BROKEN", label: "Link Expired / Broken" },
-    { value: "PORTAL_OR_OTP_ERROR", label: "Portal / OTP Error" },
-    { value: "ELIGIBILITY_BLOCKED", label: "Eligibility Blocked" },
-    { value: "OTHER_ISSUE", label: "Other Issue" },
-  ];
-
-  return (
-    <Modal isOpen onClose={onClose} title={`Update Status — ${app.job?.company_name}`} size="md">
-      <div className="space-y-5">
-        <div>
-          <p className="text-sm text-surface-400 mb-1">{app.job?.title}</p>
-        </div>
-
-        {/* Status Selection */}
-        <div className="grid grid-cols-2 gap-3">
-          {(
-            [
-              { value: "APPLIED", label: "Applied Successfully", icon: "✅", color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
-              { value: "FACING_TROUBLE", label: "Facing Trouble", icon: "⚠️", color: "border-red-500/30 bg-red-500/10 text-red-300" },
-              { value: "NOT_ELIGIBLE", label: "Not Eligible", icon: "🚫", color: "border-slate-500/30 bg-slate-500/10 text-slate-300" },
-              { value: "NOT_APPLIED", label: "Not Applied Yet", icon: "⏳", color: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setStatus(opt.value)}
-              className={`rounded-xl border p-3 text-left transition-all ${
-                status === opt.value
-                  ? `${opt.color} ring-2 ring-offset-1 ring-offset-surface-900`
-                  : "border-surface-700 bg-surface-800 text-surface-400 hover:border-surface-600"
-              }`}
-            >
-              <span className="text-lg">{opt.icon}</span>
-              <p className="text-sm font-medium mt-1">{opt.label}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Conditional Fields */}
-        {status === "APPLIED" && (
-          <div className="space-y-1.5 animate-fadeIn">
-            <label className="text-sm font-medium text-surface-300">
-              Application Reference ID (Optional)
-            </label>
-            <input
-              type="text"
-              value={applicationRef}
-              onChange={(e) => setApplicationRef(e.target.value)}
-              className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500"
-              placeholder="e.g., TCS-2027-ABC123"
-            />
-          </div>
-        )}
-
-        {status === "FACING_TROUBLE" && (
-          <div className="space-y-3 animate-fadeIn">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">Issue Category</label>
-              <select
-                value={issueCategory}
-                onChange={(e) => setIssueCategory(e.target.value)}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white appearance-none cursor-pointer"
-              >
-                <option value="">Select issue type</option>
-                {issueOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">
-                Describe the Issue <span className="text-red-400">*</span>
+              <label className="text-xs font-semibold text-surface-300">
+                Application / Candidate ID (Optional)
               </label>
-              <textarea
-                value={issueNote}
-                onChange={(e) => setIssueNote(e.target.value)}
-                required
-                rows={3}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500 resize-none"
-                placeholder="Briefly explain the problem you're facing..."
+              <input
+                type="text"
+                value={appRef}
+                onChange={(e) => setAppRef(e.target.value)}
+                placeholder="e.g. TCS-REG-987654"
+                className="w-full rounded-2xl glass-input px-4 py-3 text-xs sm:text-sm text-white"
               />
             </div>
-          </div>
-        )}
 
-        {status === "NOT_ELIGIBLE" && (
-          <div className="space-y-1.5 animate-fadeIn">
-            <label className="text-sm font-medium text-surface-300">
-              Reason (Optional)
-            </label>
-            <textarea
-              value={issueNote}
-              onChange={(e) => setIssueNote(e.target.value)}
-              rows={2}
-              className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500 resize-none"
-              placeholder="e.g., CGPA below minimum requirement"
-            />
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setActionModal(null)}
+                className="flex-1 rounded-2xl bg-surface-800 py-3 text-xs font-semibold text-surface-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() =>
+                  handleUpdateStatus(actionModal.app.job.id, "APPLIED", {
+                    applicationRef: appRef,
+                  })
+                }
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl btn-vibrant-emerald py-3 text-xs font-bold shadow-lg"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Confirm Submission
+              </button>
+            </div>
           </div>
-        )}
+        </Modal>
+      )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={saving || (status === "FACING_TROUBLE" && !issueNote)}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-3 text-sm font-semibold text-white transition-all hover:from-primary-500 hover:to-primary-600 disabled:opacity-60 disabled:cursor-not-allowed btn-lift"
+      {/* ─── Report Trouble Modal ──────────────────────── */}
+      {actionModal?.mode === "trouble" && (
+        <Modal
+          isOpen={true}
+          onClose={() => setActionModal(null)}
+          title={`Report Issue: ${actionModal.app.job.company_name}`}
+          size="sm"
         >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            "Save Status"
-          )}
-        </button>
-      </div>
-    </Modal>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-surface-300">Issue Category</label>
+              <select
+                value={issueCategory}
+                onChange={(e) => setIssueCategory(e.target.value as IssueCategory)}
+                className="w-full rounded-2xl glass-input px-3.5 py-3 text-xs sm:text-sm text-white cursor-pointer"
+              >
+                <option value="PORTAL_OR_OTP_ERROR" className="bg-surface-900">
+                  Portal Error / OTP Not Received
+                </option>
+                <option value="LINK_EXPIRED_OR_BROKEN" className="bg-surface-900">
+                  Link Expired or 404 Broken
+                </option>
+                <option value="ELIGIBILITY_BLOCKED" className="bg-surface-900">
+                  Blocked by Eligibility Screen
+                </option>
+                <option value="OTHER_ISSUE" className="bg-surface-900">
+                  Other Technical Issue
+                </option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-surface-300">
+                Describe the problem
+              </label>
+              <textarea
+                rows={3}
+                value={issueNote}
+                onChange={(e) => setIssueNote(e.target.value)}
+                placeholder="e.g. Received 'Error 500' when uploading resume..."
+                className="w-full rounded-2xl glass-input p-3.5 text-xs text-white resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setActionModal(null)}
+                className="flex-1 rounded-2xl bg-surface-800 py-3 text-xs font-semibold text-surface-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() =>
+                  handleUpdateStatus(actionModal.app.job.id, "FACING_TROUBLE", {
+                    issueCategory,
+                    issueNote,
+                  })
+                }
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-rose-600 hover:bg-rose-500 py-3 text-xs font-bold text-white shadow-lg shadow-rose-950/40"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+                Report Blocker
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ─── Profile Drawer ────────────────────────────── */}
+      <Drawer
+        isOpen={showProfileDrawer}
+        onClose={() => setShowProfileDrawer(false)}
+        title="Candidate Profile"
+        size="sm"
+      >
+        <div className="space-y-5">
+          <div className="flex items-center gap-3 rounded-2xl bg-surface-900/40 border border-white/5 p-4">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-primary-500 to-indigo-600 flex items-center justify-center font-bold text-white text-base">
+              {profile.full_name.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-base">{profile.full_name}</h3>
+              <p className="text-xs text-cyan-300">{profile.department} Department</p>
+              {profile.roll_number && (
+                <p className="text-xs text-surface-400 font-mono mt-0.5">{profile.roll_number}</p>
+              )}
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-surface-300">Registered Email</label>
+              <input
+                type="email"
+                disabled
+                value={profile.email}
+                className="w-full rounded-2xl bg-surface-900/60 border border-white/5 px-4 py-3 text-xs text-surface-400 cursor-not-allowed"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-surface-300">
+                Phone Number (WhatsApp Alerts)
+              </label>
+              <input
+                type="tel"
+                required
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                className="w-full rounded-2xl glass-input px-4 py-3 text-xs sm:text-sm text-white"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingProfile}
+              className="w-full rounded-2xl btn-vibrant-primary py-3.5 text-xs font-bold shadow-lg"
+            >
+              {savingProfile ? "Saving..." : "Update Contact"}
+            </button>
+          </form>
+        </div>
+      </Drawer>
+
+      {/* ─── Notification Inbox Drawer ─────────────────── */}
+      <NotificationInboxDrawer
+        isOpen={showNotificationDrawer}
+        onClose={() => setShowNotificationDrawer(false)}
+        notifications={notifications}
+        onNotificationRead={fetchData}
+      />
+
+      {/* ─── Student Help Chat Drawer ──────────────────── */}
+      <StudentHelpChatDrawer
+        isOpen={showHelpChatDrawer}
+        onClose={() => setShowHelpChatDrawer(false)}
+        messages={help_messages}
+        onMessageSent={fetchData}
+      />
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, X, Info } from "lucide-react";
 
 /* ─── Loading Spinner ─────────────────────────────────── */
 export function Spinner({ className = "" }: { className?: string }) {
@@ -14,73 +14,76 @@ export function Spinner({ className = "" }: { className?: string }) {
 
 export function FullPageSpinner() {
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-surface-950/80 backdrop-blur-sm z-50">
+    <div className="fixed inset-0 flex items-center justify-center bg-surface-950/80 backdrop-blur-md z-50">
       <div className="flex flex-col items-center gap-4">
         <div className="relative">
-          <div className="h-16 w-16 rounded-full border-4 border-surface-700 border-t-primary-500 animate-spin" />
-          <div className="absolute inset-0 h-16 w-16 rounded-full border-4 border-transparent border-b-accent-500 animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+          <div className="h-16 w-16 rounded-full border-4 border-surface-700/60 border-t-primary-500 animate-spin" />
+          <div
+            className="absolute inset-0 h-16 w-16 rounded-full border-4 border-transparent border-b-accent-400 animate-spin"
+            style={{ animationDirection: "reverse", animationDuration: "1.4s" }}
+          />
         </div>
-        <p className="text-surface-400 text-sm font-medium animate-pulse">Loading...</p>
+        <p className="gradient-text text-sm font-semibold tracking-wide animate-pulse">
+          ApplyForge 2.0 Loading...
+        </p>
       </div>
     </div>
   );
 }
 
-/* ─── KPI Card ─────────────────────────────────────────── */
+/* ─── Glassmorphic KPI Card ─────────────────────────────── */
 export function KPICard({
   label,
   value,
   icon,
   color = "primary",
   subtitle,
+  onClick,
 }: {
   label: string;
   value: string | number;
   icon: React.ReactNode;
-  color?: "primary" | "green" | "yellow" | "red" | "gray";
+  color?: "primary" | "green" | "yellow" | "red" | "cyan" | "purple";
   subtitle?: string;
+  onClick?: () => void;
 }) {
-  const colorClasses = {
-    primary: "from-primary-600/20 to-primary-800/10 border-primary-500/20",
-    green: "from-emerald-600/20 to-emerald-800/10 border-emerald-500/20",
-    yellow: "from-amber-600/20 to-amber-800/10 border-amber-500/20",
-    red: "from-red-600/20 to-red-800/10 border-red-500/20",
-    gray: "from-slate-600/20 to-slate-800/10 border-slate-500/20",
-  };
-
-  const iconColors = {
-    primary: "text-primary-400",
-    green: "text-emerald-400",
-    yellow: "text-amber-400",
-    red: "text-red-400",
-    gray: "text-slate-400",
+  const colorGradients = {
+    primary: "from-primary-600/25 via-primary-900/10 to-transparent border-primary-500/30 text-primary-400 shadow-primary-950/50",
+    green: "from-emerald-600/25 via-emerald-900/10 to-transparent border-emerald-500/30 text-emerald-400 shadow-emerald-950/50",
+    yellow: "from-amber-600/25 via-amber-900/10 to-transparent border-amber-500/30 text-amber-400 shadow-amber-950/50",
+    red: "from-rose-600/25 via-rose-900/10 to-transparent border-rose-500/30 text-rose-400 shadow-rose-950/50",
+    cyan: "from-cyan-600/25 via-cyan-900/10 to-transparent border-cyan-500/30 text-cyan-400 shadow-cyan-950/50",
+    purple: "from-fuchsia-600/25 via-fuchsia-900/10 to-transparent border-fuchsia-500/30 text-fuchsia-400 shadow-fuchsia-950/50",
   };
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${colorClasses[color]} border p-5 transition-all duration-300 hover:scale-[1.02] hover:shadow-lg`}
+      onClick={onClick}
+      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${colorGradients[color]} glass-card p-5 ${
+        onClick ? "cursor-pointer" : ""
+      }`}
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-surface-400">
+          <p className="text-xs font-semibold uppercase tracking-wider text-surface-400">
             {label}
           </p>
-          <p className="mt-2 text-3xl font-bold text-white">{value}</p>
+          <p className="mt-2 text-3xl font-extrabold text-white tracking-tight">{value}</p>
           {subtitle && (
             <p className="mt-1 text-xs text-surface-400">{subtitle}</p>
           )}
         </div>
-        <div className={`rounded-lg bg-surface-800/50 p-2.5 ${iconColors[color]}`}>
+        <div className="rounded-xl bg-white/5 border border-white/10 p-3 shadow-inner">
           {icon}
         </div>
       </div>
-      {/* Decorative glow */}
-      <div className="absolute -bottom-4 -right-4 h-24 w-24 rounded-full bg-gradient-to-br from-white/5 to-transparent blur-2xl" />
+      {/* Decorative ambient flare */}
+      <div className="absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-gradient-to-br from-white/10 to-transparent blur-2xl pointer-events-none" />
     </div>
   );
 }
 
-/* ─── Toast Notification ────────────────────────────────── */
+/* ─── Glass Toast Notification ──────────────────────────── */
 export function Toast({
   message,
   type = "success",
@@ -90,32 +93,35 @@ export function Toast({
   type?: "success" | "error" | "info";
   onClose: () => void;
 }) {
-  const colors = {
-    success: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
-    error: "bg-red-500/10 border-red-500/30 text-red-300",
-    info: "bg-primary-500/10 border-primary-500/30 text-primary-300",
+  const styles = {
+    success: "bg-emerald-950/80 border-emerald-500/40 text-emerald-200 shadow-emerald-950/60",
+    error: "bg-rose-950/80 border-rose-500/40 text-rose-200 shadow-rose-950/60",
+    info: "bg-primary-950/80 border-primary-500/40 text-primary-200 shadow-primary-950/60",
   };
 
   const icons = {
-    success: <CheckCircle2 className="h-5 w-5" />,
-    error: <AlertTriangle className="h-5 w-5" />,
-    info: <AlertTriangle className="h-5 w-5" />,
+    success: <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />,
+    error: <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />,
+    info: <Info className="h-5 w-5 text-primary-400 shrink-0" />,
   };
 
   return (
     <div
-      className={`fixed top-4 right-4 z-50 flex items-center gap-3 rounded-xl border px-4 py-3 shadow-xl toast-enter ${colors[type]}`}
+      className={`fixed top-5 right-5 z-50 flex items-center gap-3 rounded-2xl border px-5 py-3.5 shadow-2xl backdrop-blur-xl animate-fadeIn ${styles[type]}`}
     >
       {icons[type]}
-      <span className="text-sm font-medium">{message}</span>
-      <button onClick={onClose} className="ml-2 hover:opacity-70 transition-opacity">
+      <span className="text-sm font-medium pr-2">{message}</span>
+      <button
+        onClick={onClose}
+        className="rounded-lg p-1 hover:bg-white/10 transition-colors text-white/70 hover:text-white"
+      >
         <X className="h-4 w-4" />
       </button>
     </div>
   );
 }
 
-/* ─── Modal ─────────────────────────────────────────────── */
+/* ─── Glass Modal ───────────────────────────────────────── */
 export function Modal({
   isOpen,
   onClose,
@@ -141,17 +147,17 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/75 backdrop-blur-md"
         onClick={onClose}
       />
       <div
-        className={`relative w-full ${sizeClasses[size]} max-h-[85vh] overflow-y-auto rounded-2xl bg-surface-900 border border-surface-700 shadow-2xl animate-fadeIn custom-scroll`}
+        className={`relative w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto rounded-3xl glass-modal shadow-2xl animate-fadeIn custom-scroll`}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-700 bg-surface-900/95 backdrop-blur-sm px-6 py-4 rounded-t-2xl">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-surface-900/90 backdrop-blur-xl px-6 py-4 rounded-t-3xl">
+          <h2 className="text-lg font-bold text-white tracking-wide">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
+            className="rounded-xl p-2 text-surface-400 hover:bg-white/10 hover:text-white transition-all"
           >
             <X className="h-5 w-5" />
           </button>
@@ -162,32 +168,42 @@ export function Modal({
   );
 }
 
-/* ─── Drawer (Slide-over panel) ──────────────────────── */
+/* ─── Glass Drawer (Slide-over panel) ────────────────── */
 export function Drawer({
   isOpen,
   onClose,
   title,
   children,
+  size = "md",
 }: {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  size?: "sm" | "md" | "lg";
 }) {
   if (!isOpen) return null;
+
+  const sizeClasses = {
+    sm: "max-w-md",
+    md: "max-w-xl",
+    lg: "max-w-3xl",
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/70 backdrop-blur-md"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-xl overflow-y-auto bg-surface-900 border-l border-surface-700 shadow-2xl animate-slideInRight custom-scroll">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-700 bg-surface-900/95 backdrop-blur-sm px-6 py-4">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+      <div
+        className={`relative w-full ${sizeClasses[size]} overflow-y-auto bg-surface-950/95 backdrop-blur-2xl border-l border-white/10 shadow-2xl animate-slideInRight custom-scroll`}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-surface-950/85 backdrop-blur-xl px-6 py-4">
+          <h2 className="text-lg font-bold text-white">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
+            className="rounded-xl p-2 text-surface-400 hover:bg-white/10 hover:text-white transition-all"
           >
             <X className="h-5 w-5" />
           </button>
@@ -202,14 +218,16 @@ export function Drawer({
 export function PriorityBadge({ priority }: { priority: string }) {
   const cls = `badge-${priority.toLowerCase()}`;
   const emoji: Record<string, string> = {
-    URGENT: "🔴",
-    HIGH: "🟠",
-    NORMAL: "🟢",
-    LOW: "⚪",
+    URGENT: "⚡",
+    HIGH: "🔥",
+    NORMAL: "✨",
+    LOW: "📌",
   };
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
-      <span>{emoji[priority] || "🟢"}</span>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold backdrop-blur-md ${cls}`}
+    >
+      <span>{emoji[priority] || "✨"}</span>
       {priority}
     </span>
   );
@@ -224,13 +242,17 @@ export function StatusBadge({ status }: { status: string }) {
     NOT_ELIGIBLE: "status-not-eligible",
   };
   const labels: Record<string, string> = {
-    NOT_APPLIED: "Not Applied Yet",
+    NOT_APPLIED: "Pending Action",
     APPLIED: "Applied",
     FACING_TROUBLE: "Facing Trouble",
     NOT_ELIGIBLE: "Not Eligible",
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${map[status] || "status-not-applied"}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold backdrop-blur-md ${
+        map[status] || "status-not-applied"
+      }`}
+    >
       {labels[status] || status}
     </span>
   );
@@ -241,18 +263,21 @@ export function EmptyState({
   icon,
   title,
   description,
+  action,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-2xl bg-surface-800/50 p-4 text-surface-500">
+      <div className="mb-4 rounded-3xl bg-surface-800/40 border border-white/5 p-5 text-primary-400 shadow-inner">
         {icon}
       </div>
-      <h3 className="text-lg font-semibold text-surface-300">{title}</h3>
-      <p className="mt-1 text-sm text-surface-500 max-w-sm">{description}</p>
+      <h3 className="text-lg font-bold text-surface-200">{title}</h3>
+      <p className="mt-1 text-sm text-surface-400 max-w-sm">{description}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
