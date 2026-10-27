@@ -3,16 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { ok, err } from "@/lib/http";
 import { unauthorized, badRequest } from "@/lib/errors";
-import type {
-  StudentDashboard,
-  AdminDashboard,
-  StudentRow,
-  JobKPI,
-  StudentNotification,
-  HelpMessage,
-  HelpThread,
-  AuditLog,
-} from "@/lib/types";
+import type { StudentDashboard, AdminDashboard, StudentRow, JobKPI } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,40 +68,10 @@ async function handleStudentSnapshot(
         : 0,
   };
 
-  // Get notifications
-  let notifications: StudentNotification[] = [];
-  try {
-    const { data: notifs } = await admin
-      .from("student_notifications")
-      .select("*")
-      .eq("student_id", profile.id)
-      .order("created_at", { ascending: false })
-      .limit(30);
-    if (notifs) notifications = notifs;
-  } catch {
-    // fallback
-  }
-
-  // Get help chat messages
-  let help_messages: HelpMessage[] = [];
-  try {
-    const { data: msgs } = await admin
-      .from("help_messages")
-      .select("*")
-      .eq("student_id", profile.id)
-      .order("created_at", { ascending: true })
-      .limit(100);
-    if (msgs) help_messages = msgs;
-  } catch {
-    // fallback
-  }
-
   const dashboard: StudentDashboard = {
     profile: profile as unknown as StudentDashboard["profile"],
     kpis,
     applications: apps as StudentDashboard["applications"],
-    notifications,
-    help_messages,
   };
 
   return ok(dashboard);
@@ -165,6 +126,7 @@ async function handleAdminSnapshot(
       phone: s.phone,
       roll_number: s.roll_number,
       department: s.department,
+      cgpa: s.cgpa,
       total_jobs: stats.total,
       applied: stats.applied,
       not_applied: stats.not_applied,
@@ -180,79 +142,10 @@ async function handleAdminSnapshot(
     .eq("is_active", true)
     .order("name", { ascending: true });
 
-  // Fetch Help Threads
-  const helpThreadsMap = new Map<string, HelpThread>();
-  try {
-    const { data: allMessages } = await admin
-      .from("help_messages")
-      .select("*, student:profiles!student_id(id, full_name, email, department, phone)")
-      .order("created_at", { ascending: true });
-
-    for (const msg of allMessages || []) {
-      const s = msg.student as Record<string, unknown> | null;
-      const sId = msg.student_id;
-      if (!helpThreadsMap.has(sId)) {
-        helpThreadsMap.set(sId, {
-          student_id: sId,
-          student_name: String(s?.full_name || "Student"),
-          student_email: String(s?.email || ""),
-          student_dept: String(s?.department || ""),
-          student_phone: String(s?.phone || ""),
-          unread_count: 0,
-          latest_message: msg.message,
-          latest_timestamp: msg.created_at,
-          is_resolved: msg.is_resolved || false,
-          messages: [],
-        });
-      }
-      const thread = helpThreadsMap.get(sId)!;
-      thread.messages.push(msg as HelpMessage);
-      thread.latest_message = msg.message;
-      thread.latest_timestamp = msg.created_at;
-      thread.is_resolved = msg.is_resolved;
-      if (msg.sender_role === "student" && !msg.is_resolved) {
-        thread.unread_count++;
-      }
-    }
-  } catch {
-    // fallback
-  }
-
-  // Fetch Audit Logs
-  let audit_logs: AuditLog[] = [];
-  try {
-    const { data: logs } = await admin
-      .from("audit_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (logs) audit_logs = logs;
-  } catch {
-    // fallback
-  }
-
-  // Fetch Notifications history
-  let notifications: StudentNotification[] = [];
-  try {
-    const { data: notifs } = await admin
-      .from("student_notifications")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(40);
-    if (notifs) notifications = notifs;
-  } catch {
-    // fallback
-  }
-
   const dashboard: AdminDashboard = {
     jobs: (jobs || []) as AdminDashboard["jobs"],
     students,
     whatsapp_groups: (whatsapp_groups || []) as AdminDashboard["whatsapp_groups"],
-    help_threads: Array.from(helpThreadsMap.values()).sort(
-      (a, b) => new Date(b.latest_timestamp).getTime() - new Date(a.latest_timestamp).getTime()
-    ),
-    audit_logs,
-    notifications,
   };
 
   // Job detail

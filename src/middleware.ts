@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const PROTECTED_STUDENT = ["/dashboard"];
+const PROTECTED_ADMIN = ["/admin"];
 const AUTH_PAGES = ["/login", "/register", "/admin/login"];
 
 function getCleanUrl(): string {
@@ -43,50 +45,30 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Helper to fetch user's role
-  async function getUserRole(userId: string): Promise<string> {
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .single();
-      return profile?.role || "student";
-    } catch {
-      return "student";
+  // Protected student routes
+  if (PROTECTED_STUDENT.some((p) => pathname.startsWith(p))) {
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", request.url));
     }
   }
 
-  // 1. Guard /admin routes (except /admin/login)
+  // Protected admin routes (excluding /admin/login)
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
     if (!user) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
-    const role = await getUserRole(user.id);
-    if (role !== "admin") {
-      // Role mismatch: Non-admin trying to access admin portal
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
-    return supabaseResponse;
   }
 
-  // 2. Guard student /dashboard routes
-  if (pathname.startsWith("/dashboard")) {
-    if (!user) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-    const role = await getUserRole(user.id);
-    if (role === "admin") {
-      // Role mismatch: Admin trying to access student portal
-      return NextResponse.redirect(new URL("/admin", request.url));
-    }
-    return supabaseResponse;
-  }
-
-  // 3. Redirect logged-in users away from auth pages
+  // Redirect logged-in users away from auth pages
   if (user && AUTH_PAGES.some((p) => pathname === p)) {
-    const role = await getUserRole(user.id);
-    if (role === "admin") {
+    // Check role to redirect appropriately
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.role === "admin") {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -97,6 +79,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

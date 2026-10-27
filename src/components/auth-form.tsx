@@ -13,7 +13,6 @@ import {
   EyeOff,
   ArrowRight,
   Loader2,
-  Hash,
 } from "lucide-react";
 import { DEPARTMENTS } from "@/lib/types";
 import { Toast } from "./shared";
@@ -54,44 +53,44 @@ export function LoginForm({ adminMode = false }: { adminMode?: boolean }) {
   return (
     <>
       {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-1.5">
-          <label htmlFor="login-email" className="block text-xs font-semibold text-surface-300">
+          <label htmlFor="login-email" className="block text-sm font-medium text-surface-300">
             Email Address
           </label>
           <div className="relative">
-            <Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" />
+            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
             <input
               id="login-email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-2xl glass-input pl-10 pr-4 py-3 text-xs sm:text-sm text-white placeholder-surface-500"
+              className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-4 py-3 text-sm text-white placeholder-surface-500 transition-all hover:border-surface-500 focus:border-primary-500"
               placeholder="you@college.edu"
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="login-password" className="block text-xs font-semibold text-surface-300">
+          <label htmlFor="login-password" className="block text-sm font-medium text-surface-300">
             Password
           </label>
           <div className="relative">
-            <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" />
+            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
             <input
               id="login-password"
               type={showPassword ? "text" : "password"}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-2xl glass-input pl-10 pr-12 py-3 text-xs sm:text-sm text-white placeholder-surface-500"
+              className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-12 py-3 text-sm text-white placeholder-surface-500 transition-all hover:border-surface-500 focus:border-primary-500"
               placeholder="••••••••"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-surface-400 hover:text-white transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors"
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -101,7 +100,7 @@ export function LoginForm({ adminMode = false }: { adminMode?: boolean }) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl btn-vibrant-primary px-6 py-3.5 text-xs sm:text-sm font-bold shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-primary-900/30 transition-all hover:from-primary-500 hover:to-primary-600 disabled:opacity-60 disabled:cursor-not-allowed btn-lift"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -124,7 +123,6 @@ export function RegisterForm() {
     fullName: "",
     email: "",
     phone: "",
-    rollNumber: "",
     password: "",
     department: "CSE" as string,
   });
@@ -145,7 +143,6 @@ export function RegisterForm() {
       fullName: form.fullName,
       email: form.email,
       phone: form.phone,
-      rollNumber: form.rollNumber || undefined,
       password: form.password,
       department: form.department,
     });
@@ -171,7 +168,7 @@ export function RegisterForm() {
     },
     {
       id: "reg-email",
-      label: "College Email Address",
+      label: "Email Address",
       field: "email",
       type: "email",
       icon: <Mail className="h-4 w-4" />,
@@ -179,17 +176,8 @@ export function RegisterForm() {
       required: true,
     },
     {
-      id: "reg-roll",
-      label: "Roll / Register Number",
-      field: "rollNumber",
-      type: "text",
-      icon: <Hash className="h-4 w-4" />,
-      placeholder: "711523BCS001",
-      required: false,
-    },
-    {
       id: "reg-phone",
-      label: "Phone Number (WhatsApp Alerts)",
+      label: "Phone Number (WhatsApp)",
       field: "phone",
       type: "tel",
       icon: <Phone className="h-4 w-4" />,
@@ -210,14 +198,14 @@ export function RegisterForm() {
   return (
     <>
       {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
-      <form onSubmit={handleSubmit} className="space-y-3.5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {fields.map((f) => (
-          <div key={f.id} className="space-y-1">
-            <label htmlFor={f.id} className="block text-xs font-semibold text-surface-300">
+          <div key={f.id} className="space-y-1.5">
+            <label htmlFor={f.id} className="block text-sm font-medium text-surface-300">
               {f.label}
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500">
                 {f.icon}
               </span>
               <input
@@ -226,14 +214,14 @@ export function RegisterForm() {
                 required={f.required}
                 value={form[f.field as keyof typeof form]}
                 onChange={(e) => update(f.field, e.target.value)}
-                className="w-full rounded-2xl glass-input pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-surface-500"
+                className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-4 py-3 text-sm text-white placeholder-surface-500 transition-all hover:border-surface-500 focus:border-primary-500"
                 placeholder={f.placeholder}
               />
               {f.field === "password" && (
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-surface-400 hover:text-white transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -242,25 +230,25 @@ export function RegisterForm() {
           </div>
         ))}
 
-        <div className="space-y-1">
-          <label htmlFor="reg-dept" className="block text-xs font-semibold text-surface-300">
+        <div className="space-y-1.5">
+          <label htmlFor="reg-dept" className="block text-sm font-medium text-surface-300">
             Department
           </label>
           <div className="relative">
-            <GraduationCap className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" />
+            <GraduationCap className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
             <select
               id="reg-dept"
               value={form.department}
               onChange={(e) => update("department", e.target.value)}
-              className="w-full rounded-2xl glass-input pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white appearance-none cursor-pointer"
+              className="w-full rounded-xl bg-surface-800 border border-surface-600 pl-10 pr-10 py-3 text-sm text-white transition-all hover:border-surface-500 focus:border-primary-500 appearance-none cursor-pointer"
             >
               {DEPARTMENTS.map((d) => (
-                <option key={d} value={d} className="bg-surface-900">
+                <option key={d} value={d}>
                   {d}
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-surface-400 text-xs">
+            <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-surface-500 text-xs">
               ▼
             </div>
           </div>
@@ -269,13 +257,13 @@ export function RegisterForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl btn-vibrant-primary px-6 py-3.5 text-xs sm:text-sm font-bold shadow-xl disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-primary-900/30 transition-all hover:from-primary-500 hover:to-primary-600 disabled:opacity-60 disabled:cursor-not-allowed btn-lift"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <>
-              Create Student Profile
+              Create Account
               <ArrowRight className="h-4 w-4" />
             </>
           )}

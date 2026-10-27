@@ -3,23 +3,23 @@ import { createClient } from "@supabase/supabase-js";
 const DEPARTMENTS = ["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"] as const;
 
 const SAMPLE_STUDENTS = [
-  { name: "Arun Kumar S", roll: "711523BCS001", dept: "CSE", phone: "9876500001" },
-  { name: "Priya Dharshini M", roll: "711523BCS002", dept: "CSE", phone: "9876500002" },
-  { name: "Karthik Rajan V", roll: "711523BIT003", dept: "IT", phone: "9876500003" },
-  { name: "Divya Lakshmi R", roll: "711523BAD004", dept: "AI&DS", phone: "9876500004" },
-  { name: "Surya Prakash N", roll: "711523BEC005", dept: "ECE", phone: "9876500005" },
-  { name: "Meena Kumari P", roll: "711523BEE006", dept: "EEE", phone: "9876500006" },
-  { name: "Vijay Anand K", roll: "711523BME007", dept: "MECH", phone: "9876500007" },
-  { name: "Kavitha Rani J", roll: "711523BCE008", dept: "CIVIL", phone: "9876500008" },
-  { name: "Rajesh Kumar T", roll: "711523BCS009", dept: "CSE", phone: "9876500009" },
-  { name: "Nithya Sree L", roll: "711523BIT010", dept: "IT", phone: "9876500010" },
+  { name: "Arun Kumar S", roll: "711523BCS001", dept: "CSE", cgpa: 8.75, phone: "9876500001" },
+  { name: "Priya Dharshini M", roll: "711523BCS002", dept: "CSE", cgpa: 9.10, phone: "9876500002" },
+  { name: "Karthik Rajan V", roll: "711523BIT003", dept: "IT", cgpa: 7.85, phone: "9876500003" },
+  { name: "Divya Lakshmi R", roll: "711523BAD004", dept: "AI&DS", cgpa: 8.55, phone: "9876500004" },
+  { name: "Surya Prakash N", roll: "711523BEC005", dept: "ECE", cgpa: 7.20, phone: "9876500005" },
+  { name: "Meena Kumari P", roll: "711523BEE006", dept: "EEE", cgpa: 8.00, phone: "9876500006" },
+  { name: "Vijay Anand K", roll: "711523BME007", dept: "MECH", cgpa: 6.95, phone: "9876500007" },
+  { name: "Kavitha Rani J", roll: "711523BCE008", dept: "CIVIL", cgpa: 7.45, phone: "9876500008" },
+  { name: "Rajesh Kumar T", roll: "711523BCS009", dept: "CSE", cgpa: 8.30, phone: "9876500009" },
+  { name: "Nithya Sree L", roll: "711523BIT010", dept: "IT", cgpa: 9.25, phone: "9876500010" },
 ];
 
 const SAMPLE_GROUPS = [
-  { name: "CSE Placements", department_tag: "CSE", invite_link: "https://chat.whatsapp.com/abc123" },
-  { name: "IT Placements", department_tag: "IT", invite_link: "https://chat.whatsapp.com/def456" },
-  { name: "All Branches Placements", department_tag: "ALL", invite_link: "https://chat.whatsapp.com/ghi789" },
-  { name: "AI&DS Placements", department_tag: "AI&DS", invite_link: "https://chat.whatsapp.com/jkl012" },
+  { name: "CSE 2027 Placements", department_tag: "CSE", invite_link: "https://chat.whatsapp.com/abc123" },
+  { name: "IT 2027 Placements", department_tag: "IT", invite_link: "https://chat.whatsapp.com/def456" },
+  { name: "All Branches 2027", department_tag: "ALL", invite_link: "https://chat.whatsapp.com/ghi789" },
+  { name: "AI&DS 2027 Placements", department_tag: "AI&DS", invite_link: "https://chat.whatsapp.com/jkl012" },
 ];
 
 async function main() {
@@ -66,6 +66,8 @@ async function main() {
       phone: s.phone,
       roll_number: s.roll,
       department: s.dept,
+      batch_year: 2027,
+      cgpa: s.cgpa,
       is_active: true,
     });
 
@@ -94,8 +96,10 @@ async function main() {
       priority: "URGENT",
       package_ctc: "7.5 LPA",
       location: "Chennai / Hyderabad",
-      description: "Full Stack Developer role. Apply via TCS NextStep portal.",
+      description: "Full Stack Developer role for 2027 batch. Apply via TCS NextStep portal.",
       eligible_departments: ["CSE", "IT", "AI&DS"],
+      min_cgpa: 7.0,
+      batch_year: 2027,
       deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
       created_by: adminId,
     },
@@ -108,6 +112,8 @@ async function main() {
       location: "Mysore / Pune",
       description: "Power Programmer and SP roles. All branches eligible.",
       eligible_departments: ["ALL"],
+      min_cgpa: 6.0,
+      batch_year: 2027,
       deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       created_by: adminId,
     },
@@ -120,6 +126,8 @@ async function main() {
       location: "Chennai",
       description: "6-month internship converting to full-time. CSE and AI&DS preferred.",
       eligible_departments: ["CSE", "AI&DS", "IT"],
+      min_cgpa: 8.0,
+      batch_year: 2027,
       deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       created_by: adminId,
     },

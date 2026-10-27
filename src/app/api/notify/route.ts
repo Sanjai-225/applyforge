@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
         const deptMatch =
           typedJob.eligible_departments.includes("ALL") ||
           typedJob.eligible_departments.includes(s.department);
-        return deptMatch;
+        const cgpaMatch = (s.cgpa || 0) >= typedJob.min_cgpa;
+        return deptMatch && cgpaMatch;
       }) as Profile[];
 
       // Send emails
