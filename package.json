@@ -12,9 +12,9 @@
     "start": "next start --hostname 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "migrate": "node --import tsx scripts/apply-migrations.ts",
-    "bootstrap:admin": "node --import tsx scripts/bootstrap-admin.ts",
-    "seed": "node --import tsx scripts/seed.ts"
+    "migrate": "node --env-file=.env.local --import tsx scripts/apply-migrations.ts",
+    "bootstrap:admin": "node --env-file=.env.local --import tsx scripts/bootstrap-admin.ts",
+    "seed": "node --env-file=.env.local --import tsx scripts/seed.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

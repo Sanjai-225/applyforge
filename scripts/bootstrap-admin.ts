@@ -19,6 +19,8 @@ async function main() {
 
   console.log(`⏳ Creating admin account: ${email}...`);
 
+  let userId: string;
+
   const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -26,13 +28,24 @@ async function main() {
   });
 
   if (authErr) {
-    console.error("❌ Auth error:", authErr.message);
-    process.exit(1);
+    if (authErr.message.toLowerCase().includes("already") || authErr.message.toLowerCase().includes("exists")) {
+      console.log(`ℹ️ Auth user already exists, looking up user ID...`);
+      const { data: usersData } = await supabase.auth.admin.listUsers();
+      const existingUser = usersData.users.find(u => u.email === email);
+      if (!existingUser) {
+        console.error("❌ Could not locate existing auth user:", authErr.message);
+        process.exit(1);
+      }
+      userId = existingUser.id;
+    } else {
+      console.error("❌ Auth error:", authErr.message);
+      process.exit(1);
+    }
+  } else {
+    userId = authData.user.id;
   }
 
-  const userId = authData.user.id;
-
-  const { error: profileErr } = await supabase.from("profiles").insert({
+  const { error: profileErr } = await supabase.from("profiles").upsert({
     id: userId,
     role: "admin",
     full_name: name,
