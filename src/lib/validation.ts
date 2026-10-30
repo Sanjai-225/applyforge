@@ -9,8 +9,6 @@ export const RegisterSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
   department: z.enum(DEPARTMENTS),
   rollNumber: z.string().max(30).optional(),
-  batchYear: z.coerce.number().int().optional(),
-  cgpa: z.coerce.number().min(0).max(10).optional().default(0),
 });
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 
@@ -38,7 +36,6 @@ export const UpdateApplicationStatusSchema = z.object({
 export const UpdateStudentProfileSchema = z.object({
   type: z.literal("UPDATE_STUDENT_PROFILE"),
   phone: z.string().min(10).max(15).optional(),
-  cgpa: z.coerce.number().min(0).max(10).optional(),
 });
 
 export const CreateJobSchema = z.object({
@@ -51,8 +48,6 @@ export const CreateJobSchema = z.object({
   location: z.string().optional(),
   description: z.string().optional(),
   eligibleDepartments: z.array(z.string()).min(1),
-  minCgpa: z.coerce.number().min(0).max(10).default(0),
-  batchYear: z.coerce.number().int().optional(),
   deadline: z.string().optional(),
   targetGroupIds: z.array(z.string().uuid()).default([]),
   sendEmail: z.boolean().default(false),
@@ -68,6 +63,7 @@ export const UpdateJobSchema = z.object({
   packageCtc: z.string().optional(),
   location: z.string().optional(),
   description: z.string().optional(),
+  eligibleDepartments: z.array(z.string()).min(1).optional(),
   deadline: z.string().optional(),
   isActive: z.boolean().optional(),
 });
@@ -96,6 +92,30 @@ export const DeleteWhatsAppGroupSchema = z.object({
   groupId: z.string().uuid(),
 });
 
+export const SendReminderSchema = z.object({
+  type: z.literal("SEND_REMINDER"),
+  title: z.string().min(1).max(200),
+  message: z.string().min(1).max(1000),
+  studentIds: z.array(z.string().uuid()).optional(),
+  department: z.string().optional(),
+});
+
+export const SendChatMessageSchema = z.object({
+  type: z.literal("SEND_CHAT_MESSAGE"),
+  studentId: z.string().uuid(),
+  message: z.string().min(1).max(2000),
+});
+
+export const ResolveHelpThreadSchema = z.object({
+  type: z.literal("RESOLVE_HELP_THREAD"),
+  studentId: z.string().uuid(),
+});
+
+export const MarkNotificationReadSchema = z.object({
+  type: z.literal("MARK_NOTIFICATION_READ"),
+  notificationId: z.string().uuid(),
+});
+
 export const CommandSchema = z.discriminatedUnion("type", [
   RecordJobClickSchema,
   UpdateApplicationStatusSchema,
@@ -106,6 +126,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
   DeleteJobSchema,
   SaveWhatsAppGroupSchema,
   DeleteWhatsAppGroupSchema,
+  SendReminderSchema,
+  SendChatMessageSchema,
+  ResolveHelpThreadSchema,
+  MarkNotificationReadSchema,
 ]);
 export type CommandInput = z.infer<typeof CommandSchema>;
 

@@ -86,7 +86,6 @@ export async function POST(request: NextRequest) {
         if (profile.role !== "student") throw forbidden();
         const upd: Record<string, unknown> = { updated_at: new Date().toISOString() };
         if (command.phone) upd.phone = command.phone;
-        if (command.cgpa !== undefined) upd.cgpa = command.cgpa;
 
         const { error } = await admin
           .from("profiles")
@@ -111,8 +110,6 @@ export async function POST(request: NextRequest) {
             location: command.location || null,
             description: command.description || null,
             eligible_departments: command.eligibleDepartments,
-            min_cgpa: command.minCgpa,
-            batch_year: command.batchYear || null,
             deadline: command.deadline || null,
             target_group_ids: command.targetGroupIds,
             created_by: user.id,
@@ -217,6 +214,80 @@ export async function POST(request: NextRequest) {
           .eq("id", command.groupId);
         if (error) throw badRequest(error.message);
         return ok({ deleted: true });
+      }
+
+      case "SEND_REMINDER": {
+        if (profile.role !== "admin") throw forbidden();
+        let targetStudents: string[] = [];
+        
+        if (command.studentIds && command.studentIds.length > 0) {
+          targetStudents = command.studentIds;
+        } else {
+          // Send to all students (optionally filtered by department)
+          let query = admin.from("profiles").select("id").eq("role", "student").eq("is_active", true);
+          if (command.department && command.department !== "ALL") {
+            query = query.eq("department", command.department);
+          }
+          const { data: students } = await query;
+          targetStudents = (students || []).map((s: { id: string }) => s.id);
+        }
+
+        // Insert notifications for each student
+        const notifications = targetStudents.map((sid: string) => ({
+          student_id: sid,
+          title: command.title,
+          message: command.message,
+          type: "REMINDER" as const,
+        }));
+
+        if (notifications.length > 0) {
+          const { error } = await admin.from("student_notifications").insert(notifications);
+          if (error) throw badRequest(error.message);
+        }
+
+        // Audit log
+        await admin.from("audit_logs").insert({
+          actor_id: user.id,
+          actor_name: profile.full_name,
+          action: "REMINDER_SENT",
+          entity_type: "notification",
+          entity_id: null,
+          metadata: { count: targetStudents.length, title: command.title },
+        });
+
+        return ok({ sent: targetStudents.length });
+      }
+
+      case "SEND_CHAT_MESSAGE": {
+        const msgData = {
+          student_id: command.studentId,
+          sender_id: user.id,
+          sender_role: profile.role,
+          message: command.message,
+        };
+        const { error } = await admin.from("help_messages").insert(msgData);
+        if (error) throw badRequest(error.message);
+        return ok({ sent: true });
+      }
+
+      case "RESOLVE_HELP_THREAD": {
+        if (profile.role !== "admin") throw forbidden();
+        const { error } = await admin
+          .from("help_messages")
+          .update({ is_resolved: true })
+          .eq("student_id", command.studentId);
+        if (error) throw badRequest(error.message);
+        return ok({ resolved: true });
+      }
+
+      case "MARK_NOTIFICATION_READ": {
+        const { error } = await admin
+          .from("student_notifications")
+          .update({ is_read: true })
+          .eq("id", command.notificationId)
+          .eq("student_id", user.id);
+        if (error) throw badRequest(error.message);
+        return ok({ marked: true });
       }
 
       default:

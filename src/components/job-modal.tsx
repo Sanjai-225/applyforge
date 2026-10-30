@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Modal, Toast } from "./shared";
 import { post } from "@/lib/client";
 import { DEPARTMENTS, PRIORITIES } from "@/lib/types";
@@ -15,14 +15,17 @@ import {
   FileText,
   Calendar,
   GraduationCap,
-  BookOpen,
   Users,
   Mail,
   Loader2,
   CheckCircle2,
+  Trash2,
+  AlertTriangle,
+  Save,
 } from "lucide-react";
 
-interface JobModalProps {
+/* ─── Create Job Modal ──────────────────────────────────── */
+interface CreateJobModalProps {
   isOpen: boolean;
   onClose: () => void;
   whatsappGroups: WhatsAppGroup[];
@@ -34,7 +37,7 @@ export function CreateJobModal({
   onClose,
   whatsappGroups,
   onJobCreated,
-}: JobModalProps) {
+}: CreateJobModalProps) {
   const [form, setForm] = useState({
     title: "",
     companyName: "",
@@ -44,8 +47,6 @@ export function CreateJobModal({
     location: "",
     description: "",
     eligibleDepartments: ["ALL"] as string[],
-    minCgpa: "0",
-    batchYear: "2027",
     deadline: "",
     targetGroupIds: [] as string[],
     sendEmail: true,
@@ -99,8 +100,6 @@ export function CreateJobModal({
       location: form.location || undefined,
       description: form.description || undefined,
       eligibleDepartments: form.eligibleDepartments,
-      minCgpa: parseFloat(form.minCgpa) || 0,
-      batchYear: parseInt(form.batchYear) || undefined,
       deadline: form.deadline ? new Date(form.deadline).toISOString() : undefined,
       targetGroupIds: form.targetGroupIds,
       sendEmail: form.sendEmail,
@@ -109,7 +108,6 @@ export function CreateJobModal({
     if (res.ok && res.data?.job) {
       onJobCreated(res.data.job, form.sendEmail);
       onClose();
-      // Reset form
       setForm({
         title: "",
         companyName: "",
@@ -119,8 +117,6 @@ export function CreateJobModal({
         location: "",
         description: "",
         eligibleDepartments: ["ALL"],
-        minCgpa: "0",
-        batchYear: "2027",
         deadline: "",
         targetGroupIds: [],
         sendEmail: true,
@@ -135,173 +131,13 @@ export function CreateJobModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Post New Job Opportunity" size="lg">
       {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Row 1: Company + Title */}
-        <div className="grid grid-cols-2 gap-4">
-          <InputField
-            id="job-company"
-            label="Company Name"
-            icon={<Building2 className="h-4 w-4" />}
-            required
-            value={form.companyName}
-            onChange={(v) => update("companyName", v)}
-            placeholder="TCS Digital"
-          />
-          <InputField
-            id="job-title"
-            label="Job Role / Title"
-            icon={<Briefcase className="h-4 w-4" />}
-            required
-            value={form.title}
-            onChange={(v) => update("title", v)}
-            placeholder="Software Engineer"
-          />
-        </div>
-
-        {/* Application URL */}
-        <InputField
-          id="job-url"
-          label="External Application URL"
-          icon={<Link2 className="h-4 w-4" />}
-          required
-          type="url"
-          value={form.applicationUrl}
-          onChange={(v) => update("applicationUrl", v)}
-          placeholder="https://nextstep.tcs.com/campus"
+        <JobFormFields
+          form={form}
+          update={update}
+          toggleDept={toggleDept}
+          toggleGroup={toggleGroup}
+          whatsappGroups={whatsappGroups}
         />
-
-        {/* Row 2: Priority + Package + Location */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-surface-300">
-              <Zap className="h-3.5 w-3.5 inline mr-1" />
-              Priority
-            </label>
-            <select
-              value={form.priority}
-              onChange={(e) => update("priority", e.target.value)}
-              className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-3 text-sm text-white appearance-none cursor-pointer"
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <InputField
-            id="job-package"
-            label="Package / CTC"
-            icon={<DollarSign className="h-4 w-4" />}
-            value={form.packageCtc}
-            onChange={(v) => update("packageCtc", v)}
-            placeholder="7.5 LPA"
-          />
-          <InputField
-            id="job-location"
-            label="Location"
-            icon={<MapPin className="h-4 w-4" />}
-            value={form.location}
-            onChange={(v) => update("location", v)}
-            placeholder="Chennai"
-          />
-        </div>
-
-        {/* Description */}
-        <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-surface-300">
-            <FileText className="h-3.5 w-3.5 inline mr-1" />
-            Description / Instructions
-          </label>
-          <textarea
-            value={form.description}
-            onChange={(e) => update("description", e.target.value)}
-            rows={3}
-            className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500 resize-none"
-            placeholder="Additional instructions for students..."
-          />
-        </div>
-
-        {/* Row: Deadline + Batch + Min CGPA */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-surface-300">
-              <Calendar className="h-3.5 w-3.5 inline mr-1" />
-              Deadline
-            </label>
-            <input
-              type="datetime-local"
-              value={form.deadline}
-              onChange={(e) => update("deadline", e.target.value)}
-              className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-3 text-sm text-white"
-            />
-          </div>
-          <InputField
-            id="job-batch"
-            label="Batch Year"
-            icon={<Calendar className="h-4 w-4" />}
-            type="number"
-            value={form.batchYear}
-            onChange={(v) => update("batchYear", v)}
-            placeholder="2027"
-          />
-          <InputField
-            id="job-cgpa"
-            label="Min CGPA"
-            icon={<BookOpen className="h-4 w-4" />}
-            type="number"
-            value={form.minCgpa}
-            onChange={(v) => update("minCgpa", v)}
-            placeholder="0"
-          />
-        </div>
-
-        {/* Eligible Departments */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-surface-300">
-            <GraduationCap className="h-3.5 w-3.5 inline mr-1" />
-            Eligible Departments
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {["ALL", ...DEPARTMENTS].map((dept) => (
-              <button
-                key={dept}
-                type="button"
-                onClick={() => toggleDept(dept)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                  form.eligibleDepartments.includes(dept)
-                    ? "bg-primary-500/20 text-primary-300 border border-primary-500/30"
-                    : "bg-surface-800 text-surface-400 border border-surface-600 hover:bg-surface-700"
-                }`}
-              >
-                {dept}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* WhatsApp Groups */}
-        {whatsappGroups.length > 0 && (
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-surface-300">
-              <Users className="h-3.5 w-3.5 inline mr-1" />
-              Target WhatsApp Groups
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {whatsappGroups.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => toggleGroup(g.id)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                    form.targetGroupIds.includes(g.id)
-                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                      : "bg-surface-800 text-surface-400 border border-surface-600 hover:bg-surface-700"
-                  }`}
-                >
-                  {g.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Send Email Toggle */}
         <div className="flex items-center gap-3 rounded-xl bg-surface-800/50 border border-surface-700 p-4">
@@ -343,6 +179,401 @@ export function CreateJobModal({
         </button>
       </form>
     </Modal>
+  );
+}
+
+/* ─── Edit Job Modal ────────────────────────────────────── */
+interface EditJobModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  job: Job;
+  whatsappGroups: WhatsAppGroup[];
+  onJobUpdated: () => void;
+}
+
+export function EditJobModal({ isOpen, onClose, job, whatsappGroups, onJobUpdated }: EditJobModalProps) {
+  const [form, setForm] = useState({
+    title: "",
+    companyName: "",
+    applicationUrl: "",
+    priority: "NORMAL",
+    packageCtc: "",
+    location: "",
+    description: "",
+    eligibleDepartments: ["ALL"] as string[],
+    deadline: "",
+    isActive: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (job && isOpen) {
+      setForm({
+        title: job.title,
+        companyName: job.company_name,
+        applicationUrl: job.application_url,
+        priority: job.priority,
+        packageCtc: job.package_ctc || "",
+        location: job.location || "",
+        description: job.description || "",
+        eligibleDepartments: job.eligible_departments,
+        deadline: job.deadline ? new Date(job.deadline).toISOString().slice(0, 16) : "",
+        isActive: job.is_active,
+      });
+    }
+  }, [job, isOpen]);
+
+  function update(field: string, value: unknown) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function toggleDept(dept: string) {
+    setForm((prev) => {
+      let depts = [...prev.eligibleDepartments];
+      if (dept === "ALL") {
+        depts = depts.includes("ALL") ? [] : ["ALL"];
+      } else {
+        depts = depts.filter((d) => d !== "ALL");
+        if (depts.includes(dept)) {
+          depts = depts.filter((d) => d !== dept);
+        } else {
+          depts.push(dept);
+        }
+      }
+      if (depts.length === 0) depts = ["ALL"];
+      return { ...prev, eligibleDepartments: depts };
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+
+    const res = await post("/api/command", {
+      type: "UPDATE_JOB",
+      jobId: job.id,
+      title: form.title,
+      companyName: form.companyName,
+      applicationUrl: form.applicationUrl,
+      priority: form.priority,
+      packageCtc: form.packageCtc || undefined,
+      location: form.location || undefined,
+      description: form.description || undefined,
+      eligibleDepartments: form.eligibleDepartments,
+      deadline: form.deadline ? new Date(form.deadline).toISOString() : undefined,
+      isActive: form.isActive,
+    });
+
+    if (res.ok) {
+      onJobUpdated();
+      onClose();
+    } else {
+      setError(res.error || "Failed to update job");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Edit: ${job.company_name} — ${job.title}`} size="lg">
+      {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <JobFormFields
+          form={form}
+          update={update}
+          toggleDept={toggleDept}
+          whatsappGroups={whatsappGroups}
+        />
+
+        {/* Active Toggle */}
+        <div className="flex items-center gap-3 rounded-xl bg-surface-800/50 border border-surface-700 p-4">
+          <button
+            type="button"
+            onClick={() => update("isActive", !form.isActive)}
+            className={`relative h-6 w-11 rounded-full transition-colors ${
+              form.isActive ? "bg-emerald-500" : "bg-surface-600"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                form.isActive ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-surface-300">Job Active</p>
+            <p className="text-xs text-surface-500">
+              {form.isActive ? "Students can see and apply" : "Hidden from students"}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={saving}
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-primary-900/30 transition-all hover:from-primary-500 hover:to-primary-600 disabled:opacity-60 disabled:cursor-not-allowed btn-lift"
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Save Changes
+            </>
+          )}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+/* ─── Delete Job Modal ──────────────────────────────────── */
+interface DeleteJobModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  job: Job;
+  onJobDeleted: () => void;
+}
+
+export function DeleteJobModal({ isOpen, onClose, job, onJobDeleted }: DeleteJobModalProps) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+
+    const res = await post("/api/command", {
+      type: "DELETE_JOB",
+      jobId: job.id,
+    });
+
+    if (res.ok) {
+      onJobDeleted();
+      onClose();
+    } else {
+      setError(res.error || "Failed to delete job");
+    }
+    setDeleting(false);
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Delete Job">
+      {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 rounded-xl bg-red-500/10 border border-red-500/20 p-4">
+          <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-red-300">This action cannot be undone</p>
+            <p className="text-xs text-surface-400 mt-1">
+              Deleting &quot;{job.company_name} — {job.title}&quot; will remove all associated student applications permanently.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl bg-surface-800 px-4 py-3 text-sm font-medium text-surface-300 hover:bg-surface-700 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-60 transition-all"
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" />
+                Delete Permanently
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ─── Shared Job Form Fields ────────────────────────────── */
+function JobFormFields({
+  form,
+  update,
+  toggleDept,
+  toggleGroup,
+  whatsappGroups = [],
+}: {
+  form: {
+    title: string;
+    companyName: string;
+    applicationUrl: string;
+    priority: string;
+    packageCtc: string;
+    location: string;
+    description: string;
+    eligibleDepartments: string[];
+    deadline: string;
+    targetGroupIds?: string[];
+  };
+  update: (field: string, value: unknown) => void;
+  toggleDept: (dept: string) => void;
+  toggleGroup?: (groupId: string) => void;
+  whatsappGroups?: WhatsAppGroup[];
+}) {
+  return (
+    <>
+      {/* Company + Title */}
+      <div className="grid grid-cols-2 gap-4">
+        <InputField
+          id="job-company"
+          label="Company Name"
+          icon={<Building2 className="h-4 w-4" />}
+          required
+          value={form.companyName}
+          onChange={(v) => update("companyName", v)}
+          placeholder="TCS Digital"
+        />
+        <InputField
+          id="job-title"
+          label="Job Role / Title"
+          icon={<Briefcase className="h-4 w-4" />}
+          required
+          value={form.title}
+          onChange={(v) => update("title", v)}
+          placeholder="Software Engineer"
+        />
+      </div>
+
+      {/* Application URL */}
+      <InputField
+        id="job-url"
+        label="External Application URL"
+        icon={<Link2 className="h-4 w-4" />}
+        required
+        type="url"
+        value={form.applicationUrl}
+        onChange={(v) => update("applicationUrl", v)}
+        placeholder="https://nextstep.tcs.com/campus"
+      />
+
+      {/* Priority + Package + Location */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-surface-300">
+            <Zap className="h-3.5 w-3.5 inline mr-1" />
+            Priority
+          </label>
+          <select
+            value={form.priority}
+            onChange={(e) => update("priority", e.target.value)}
+            className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-3 text-sm text-white appearance-none cursor-pointer"
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+        <InputField
+          id="job-package"
+          label="Package / CTC"
+          icon={<DollarSign className="h-4 w-4" />}
+          value={form.packageCtc}
+          onChange={(v) => update("packageCtc", v)}
+          placeholder="7.5 LPA"
+        />
+        <InputField
+          id="job-location"
+          label="Location"
+          icon={<MapPin className="h-4 w-4" />}
+          value={form.location}
+          onChange={(v) => update("location", v)}
+          placeholder="Chennai"
+        />
+      </div>
+
+      {/* Description */}
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-surface-300">
+          <FileText className="h-3.5 w-3.5 inline mr-1" />
+          Description / Instructions
+        </label>
+        <textarea
+          value={form.description}
+          onChange={(e) => update("description", e.target.value)}
+          rows={3}
+          className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500 resize-none"
+          placeholder="Additional instructions for students..."
+        />
+      </div>
+
+      {/* Deadline */}
+      <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-surface-300">
+          <Calendar className="h-3.5 w-3.5 inline mr-1" />
+          Deadline
+        </label>
+        <input
+          type="datetime-local"
+          value={form.deadline}
+          onChange={(e) => update("deadline", e.target.value)}
+          className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-3 text-sm text-white"
+        />
+      </div>
+
+      {/* Eligible Departments */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-surface-300">
+          <GraduationCap className="h-3.5 w-3.5 inline mr-1" />
+          Eligible Departments
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {["ALL", ...DEPARTMENTS].map((dept) => (
+            <button
+              key={dept}
+              type="button"
+              onClick={() => toggleDept(dept)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                form.eligibleDepartments.includes(dept)
+                  ? "bg-primary-500/20 text-primary-300 border border-primary-500/30"
+                  : "bg-surface-800 text-surface-400 border border-surface-600 hover:bg-surface-700"
+              }`}
+            >
+              {dept}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* WhatsApp Groups (only for create) */}
+      {toggleGroup && whatsappGroups.length > 0 && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-surface-300">
+            <Users className="h-3.5 w-3.5 inline mr-1" />
+            Target WhatsApp Groups
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {whatsappGroups.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => toggleGroup(g.id)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                  form.targetGroupIds?.includes(g.id)
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                    : "bg-surface-800 text-surface-400 border border-surface-600 hover:bg-surface-700"
+                }`}
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

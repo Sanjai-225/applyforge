@@ -52,11 +52,10 @@ export async function POST(request: NextRequest) {
         .eq("is_active", true);
 
       const students = (eligibleStudents || []).filter((s: Profile) => {
-        const deptMatch =
+        return (
           typedJob.eligible_departments.includes("ALL") ||
-          typedJob.eligible_departments.includes(s.department);
-        const cgpaMatch = (s.cgpa || 0) >= typedJob.min_cgpa;
-        return deptMatch && cgpaMatch;
+          typedJob.eligible_departments.includes(s.department)
+        );
       }) as Profile[];
 
       // Send emails

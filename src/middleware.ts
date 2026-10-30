@@ -1,8 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_STUDENT = ["/dashboard"];
-const PROTECTED_ADMIN = ["/admin"];
 const AUTH_PAGES = ["/login", "/register", "/admin/login"];
 
 function getCleanUrl(): string {
@@ -45,23 +43,40 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Protected student routes
-  if (PROTECTED_STUDENT.some((p) => pathname.startsWith(p))) {
-    if (!user) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-  }
-
-  // Protected admin routes (excluding /admin/login)
+  // ─── Strict Admin Route Protection ────────────────────
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
     if (!user) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.role !== "admin") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
-  // Redirect logged-in users away from auth pages
+  // ─── Strict Student Route Protection ──────────────────
+  if (pathname.startsWith("/dashboard")) {
+    if (!user) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (profile?.role === "admin") {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+  }
+
+  // ─── Redirect logged-in users away from auth pages ────
   if (user && AUTH_PAGES.some((p) => pathname === p)) {
-    // Check role to redirect appropriately
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")

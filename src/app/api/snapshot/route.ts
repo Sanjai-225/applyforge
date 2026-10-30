@@ -68,10 +68,27 @@ async function handleStudentSnapshot(
         : 0,
   };
 
+  // Fetch notifications
+    const { data: notifications } = await admin
+      .from("student_notifications")
+      .select("*")
+      .eq("student_id", profile.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    // Fetch help messages
+    const { data: helpMessages } = await admin
+      .from("help_messages")
+      .select("*")
+      .eq("student_id", profile.id)
+      .order("created_at", { ascending: true });
+
   const dashboard: StudentDashboard = {
     profile: profile as unknown as StudentDashboard["profile"],
     kpis,
     applications: apps as StudentDashboard["applications"],
+    notifications: (notifications || []) as StudentDashboard["notifications"],
+    help_messages: (helpMessages || []) as StudentDashboard["help_messages"],
   };
 
   return ok(dashboard);
@@ -126,7 +143,6 @@ async function handleAdminSnapshot(
       phone: s.phone,
       roll_number: s.roll_number,
       department: s.department,
-      cgpa: s.cgpa,
       total_jobs: stats.total,
       applied: stats.applied,
       not_applied: stats.not_applied,
@@ -142,10 +158,62 @@ async function handleAdminSnapshot(
     .eq("is_active", true)
     .order("name", { ascending: true });
 
+  // Fetch help threads (aggregate help_messages by student)
+    const { data: allHelpMessages } = await admin
+      .from("help_messages")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const threadMap = new Map<string, { messages: any[]; student_name: string; student_email: string; student_department: string }>();
+    for (const msg of allHelpMessages || []) {
+      if (!threadMap.has(msg.student_id)) {
+        const student = (allStudents || []).find((s: { id: string }) => s.id === msg.student_id);
+        threadMap.set(msg.student_id, {
+          messages: [],
+          student_name: student?.full_name || "Unknown",
+          student_email: student?.email || "",
+          student_department: student?.department || "",
+        });
+      }
+      threadMap.get(msg.student_id)!.messages.push(msg);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const help_threads: AdminDashboard["help_threads"] = Array.from(threadMap.entries()).map(
+      ([studentId, threadData]) => ({
+        student_id: studentId,
+        student_name: threadData.student_name,
+        student_email: threadData.student_email,
+        student_department: threadData.student_department,
+        last_message: threadData.messages[0]?.message || "",
+        last_message_at: threadData.messages[0]?.created_at || "",
+        unread_count: threadData.messages.filter((m: any) => m.sender_role === "student" && !m.is_resolved).length,
+        is_resolved: threadData.messages.every((m: any) => m.is_resolved),
+      })
+    );
+
+    // Fetch audit logs
+    const { data: auditLogs } = await admin
+      .from("audit_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    // Fetch sent notifications
+    const { data: sentNotifications } = await admin
+      .from("student_notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
   const dashboard: AdminDashboard = {
     jobs: (jobs || []) as AdminDashboard["jobs"],
     students,
     whatsapp_groups: (whatsapp_groups || []) as AdminDashboard["whatsapp_groups"],
+    notifications_sent: (sentNotifications || []) as AdminDashboard["notifications_sent"],
+    help_threads,
+    audit_logs: (auditLogs || []) as AdminDashboard["audit_logs"],
   };
 
   // Job detail

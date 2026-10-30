@@ -13,6 +13,7 @@ import {
   EmptyState,
   Modal,
 } from "./shared";
+import { NotificationDrawer, StudentHelpChatDrawer } from "./student-inbox";
 import {
   Briefcase,
   CheckCircle2,
@@ -21,27 +22,35 @@ import {
   TrendingUp,
   ExternalLink,
   Send,
-  ChevronDown,
   LogOut,
   User,
   Filter,
-  XCircle,
   Loader2,
+  Bell,
+  MessageCircle,
+  Mail,
+  Phone,
+  Hash,
+  Building2,
 } from "lucide-react";
 
 const PRIORITY_ORDER: Record<string, number> = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
 
 type FilterTab = "ALL" | "NOT_APPLIED" | "APPLIED" | "TROUBLE";
+type StudentView = "jobs" | "profile";
 
 export default function StudentDashboardView() {
   const router = useRouter();
   const [data, setData] = useState<StudentDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FilterTab>("ALL");
+  const [view, setView] = useState<StudentView>("jobs");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [actionModal, setActionModal] = useState<{
     app: JobApplication & { job: Job };
   } | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showHelpChat, setShowHelpChat] = useState(false);
 
   const fetchData = useCallback(async () => {
     const res = await get<StudentDashboard>("/api/snapshot?scope=student");
@@ -67,10 +76,17 @@ export default function StudentDashboardView() {
     fetchData();
   }
 
+  async function handleMarkNotificationRead(id: string) {
+    await post("/api/command", { type: "MARK_NOTIFICATION_READ", notificationId: id });
+    fetchData();
+  }
+
   if (loading) return <FullPageSpinner />;
   if (!data) return null;
 
-  const { profile, kpis, applications } = data;
+  const { profile, kpis, applications, notifications = [], help_messages = [] } = data;
+
+  const unreadNotifications = notifications.filter((n) => !n.is_read).length;
 
   // Sort by priority then deadline
   const sortedApps = [...applications].sort((a, b) => {
@@ -121,12 +137,62 @@ export default function StudentDashboardView() {
                 <p className="text-[10px] text-surface-400 -mt-0.5">Student Dashboard</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              <div className="hidden sm:flex items-center rounded-xl bg-surface-800 border border-surface-700 p-0.5">
+                <button
+                  onClick={() => setView("jobs")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    view === "jobs"
+                      ? "bg-primary-600/30 text-primary-300"
+                      : "text-surface-400 hover:text-white"
+                  }`}
+                >
+                  Jobs
+                </button>
+                <button
+                  onClick={() => setView("profile")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    view === "profile"
+                      ? "bg-primary-600/30 text-primary-300"
+                      : "text-surface-400 hover:text-white"
+                  }`}
+                >
+                  Profile
+                </button>
+              </div>
+
+              {/* Help Chat Button */}
+              <button
+                onClick={() => setShowHelpChat(true)}
+                className="relative flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2 text-sm text-emerald-400 hover:bg-surface-700 transition-all"
+                title="Contact Admin"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs">Help</span>
+              </button>
+
+              {/* Notification Bell */}
+              <button
+                onClick={() => setShowNotifications(true)}
+                className="relative flex items-center justify-center rounded-xl bg-surface-800 border border-surface-700 p-2 text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
+                title="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadNotifications > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                  </span>
+                )}
+              </button>
+
+              {/* User Info */}
               <div className="hidden sm:flex items-center gap-2 rounded-xl bg-surface-800 px-3 py-2">
                 <User className="h-4 w-4 text-primary-400" />
                 <span className="text-sm text-surface-300">{profile.full_name}</span>
                 <span className="text-xs text-surface-500">({profile.roll_number || profile.department})</span>
               </div>
+
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-1.5 rounded-xl bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
@@ -139,88 +205,150 @@ export default function StudentDashboardView() {
         </div>
       </header>
 
+      {/* Mobile View Toggle */}
+      <div className="sm:hidden flex items-center gap-2 px-4 pt-4">
+        <button
+          onClick={() => setView("jobs")}
+          className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
+            view === "jobs"
+              ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
+              : "bg-surface-800 text-surface-400 border border-surface-700"
+          }`}
+        >
+          Jobs
+        </button>
+        <button
+          onClick={() => setView("profile")}
+          className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
+            view === "profile"
+              ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
+              : "bg-surface-800 text-surface-400 border border-surface-700"
+          }`}
+        >
+          Profile
+        </button>
+      </div>
+
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-          <KPICard
-            label="Total Jobs"
-            value={kpis.total_jobs}
-            icon={<Briefcase className="h-5 w-5" />}
-            color="primary"
-          />
-          <KPICard
-            label="Applied"
-            value={kpis.applied}
-            icon={<CheckCircle2 className="h-5 w-5" />}
-            color="green"
-          />
-          <KPICard
-            label="Pending"
-            value={kpis.not_applied}
-            icon={<Clock className="h-5 w-5" />}
-            color="yellow"
-          />
-          <KPICard
-            label="Trouble"
-            value={kpis.facing_trouble}
-            icon={<AlertTriangle className="h-5 w-5" />}
-            color="red"
-          />
-          <KPICard
-            label="Completion"
-            value={`${kpis.completion_pct}%`}
-            icon={<TrendingUp className="h-5 w-5" />}
-            color="primary"
-            subtitle={`${kpis.applied} of ${kpis.total_jobs} jobs`}
-          />
-        </div>
+        {view === "profile" ? (
+          /* ─── Profile View ──────────────────────────── */
+          <div className="max-w-2xl mx-auto">
+            <div className="rounded-2xl bg-surface-800/50 border border-surface-700 overflow-hidden">
+              {/* Profile Header */}
+              <div className="bg-gradient-to-r from-primary-600/20 to-primary-800/20 px-6 py-8 text-center border-b border-surface-700">
+                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 shadow-xl shadow-primary-900/30 mb-4">
+                  <User className="h-10 w-10 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-white">{profile.full_name}</h2>
+                <p className="text-sm text-surface-400 mt-1">{profile.department} Department</p>
+              </div>
 
-        {/* Filter Tabs */}
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-          <Filter className="h-4 w-4 text-surface-500 flex-shrink-0" />
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
-                tab === t.key
-                  ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
-                  : "bg-surface-800 text-surface-400 border border-surface-700 hover:bg-surface-700 hover:text-surface-300"
-              }`}
-            >
-              {t.label}
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  tab === t.key
-                    ? "bg-primary-500/20 text-primary-300"
-                    : "bg-surface-700 text-surface-500"
-                }`}
-              >
-                {t.count}
-              </span>
-            </button>
-          ))}
-        </div>
+              {/* Profile Details */}
+              <div className="p-6 space-y-4">
+                <ProfileField icon={<Mail className="h-4 w-4" />} label="Email" value={profile.email} />
+                <ProfileField icon={<Phone className="h-4 w-4" />} label="Phone" value={profile.phone || "Not set"} />
+                <ProfileField icon={<Hash className="h-4 w-4" />} label="Roll Number" value={profile.roll_number || "Not set"} />
+                <ProfileField icon={<Building2 className="h-4 w-4" />} label="Department" value={profile.department} />
+              </div>
 
-        {/* Job Cards */}
-        {filteredApps.length === 0 ? (
-          <EmptyState
-            icon={<Briefcase className="h-8 w-8" />}
-            title="No jobs found"
-            description="No jobs match your current filter selection."
-          />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredApps.map((app, idx) => (
-              <JobCard
-                key={app.id}
-                app={app}
-                index={idx}
-                onClickJob={handleClickJob}
-                onAction={() => setActionModal({ app })}
-              />
-            ))}
+              {/* Stats Summary */}
+              <div className="border-t border-surface-700 px-6 py-5">
+                <h3 className="text-sm font-semibold text-surface-300 mb-3">Application Summary</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatItem label="Total Jobs" value={kpis.total_jobs} />
+                  <StatItem label="Applied" value={kpis.applied} color="text-emerald-400" />
+                  <StatItem label="Pending" value={kpis.not_applied} color="text-amber-400" />
+                  <StatItem label="Completion" value={`${kpis.completion_pct}%`} color="text-primary-400" />
+                </div>
+              </div>
+            </div>
           </div>
+        ) : (
+          /* ─── Jobs View ─────────────────────────────── */
+          <>
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+              <KPICard
+                label="Total Jobs"
+                value={kpis.total_jobs}
+                icon={<Briefcase className="h-5 w-5" />}
+                color="primary"
+              />
+              <KPICard
+                label="Applied"
+                value={kpis.applied}
+                icon={<CheckCircle2 className="h-5 w-5" />}
+                color="green"
+              />
+              <KPICard
+                label="Pending"
+                value={kpis.not_applied}
+                icon={<Clock className="h-5 w-5" />}
+                color="yellow"
+              />
+              <KPICard
+                label="Trouble"
+                value={kpis.facing_trouble}
+                icon={<AlertTriangle className="h-5 w-5" />}
+                color="red"
+              />
+              <KPICard
+                label="Completion"
+                value={`${kpis.completion_pct}%`}
+                icon={<TrendingUp className="h-5 w-5" />}
+                color="primary"
+                subtitle={`${kpis.applied} of ${kpis.total_jobs} jobs`}
+              />
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+              <Filter className="h-4 w-4 text-surface-500 flex-shrink-0" />
+              {tabs.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all whitespace-nowrap ${
+                    tab === t.key
+                      ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
+                      : "bg-surface-800 text-surface-400 border border-surface-700 hover:bg-surface-700 hover:text-surface-300"
+                  }`}
+                >
+                  {t.label}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      tab === t.key
+                        ? "bg-primary-500/20 text-primary-300"
+                        : "bg-surface-700 text-surface-500"
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Job Cards */}
+            {filteredApps.length === 0 ? (
+              <EmptyState
+                icon={<Briefcase className="h-8 w-8" />}
+                title="No jobs found"
+                description="No jobs match your current filter selection."
+              />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredApps.map((app, idx) => (
+                  <JobCard
+                    key={app.id}
+                    app={app}
+                    index={idx}
+                    onClickJob={handleClickJob}
+                    onAction={() => setActionModal({ app })}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -237,6 +365,47 @@ export default function StudentDashboardView() {
           onError={(msg) => setToast({ message: msg, type: "error" })}
         />
       )}
+
+      {/* Notification Drawer */}
+      {showNotifications && (
+        <NotificationDrawer
+          notifications={notifications}
+          onMarkRead={handleMarkNotificationRead}
+          onClose={() => setShowNotifications(false)}
+        />
+      )}
+
+      {/* Help Chat Drawer */}
+      {showHelpChat && (
+        <StudentHelpChatDrawer
+          messages={help_messages}
+          onClose={() => setShowHelpChat(false)}
+          onRefresh={fetchData}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Profile Field ────────────────────────────────────── */
+function ProfileField({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-surface-900/50 border border-surface-700/50 px-4 py-3">
+      <span className="text-primary-400">{icon}</span>
+      <div>
+        <p className="text-[10px] text-surface-500 uppercase tracking-wider">{label}</p>
+        <p className="text-sm text-white">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Stat Item ────────────────────────────────────────── */
+function StatItem({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  return (
+    <div className="rounded-xl bg-surface-900/50 border border-surface-700/50 px-4 py-3 text-center">
+      <p className={`text-lg font-bold ${color || "text-white"}`}>{value}</p>
+      <p className="text-[10px] text-surface-500 mt-0.5">{label}</p>
     </div>
   );
 }
@@ -508,7 +677,7 @@ function StatusUpdateModal({
               onChange={(e) => setIssueNote(e.target.value)}
               rows={2}
               className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500 resize-none"
-              placeholder="e.g., CGPA below minimum requirement"
+              placeholder="e.g., Does not meet eligibility criteria"
             />
           </div>
         )}

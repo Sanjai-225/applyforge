@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { get, post } from "@/lib/client";
-import type { AdminDashboard, Job, StudentRow, WhatsAppGroup, JobApplication, Profile } from "@/lib/types";
+import type { AdminDashboard, Job, StudentRow, WhatsAppGroup, JobApplication, Profile, AuditLog } from "@/lib/types";
 import {
   KPICard,
   PriorityBadge,
@@ -13,8 +13,10 @@ import {
   EmptyState,
   Drawer,
 } from "./shared";
-import { CreateJobModal } from "./job-modal";
+import { CreateJobModal, EditJobModal, DeleteJobModal } from "./job-modal";
 import { WhatsAppBroadcastModal } from "./whatsapp-broadcast-modal";
+import { AdminSidebar, type AdminView } from "./admin-sidebar";
+import { AdminHelpChat } from "./help-chat";
 import {
   Briefcase,
   CheckCircle2,
@@ -42,25 +44,41 @@ import {
   Mail,
   Hash,
   GraduationCap,
-  BookOpen,
+  Send,
+  ScrollText,
+  Settings,
+  RefreshCcw,
 } from "lucide-react";
-
-type AdminView = "jobs" | "job-tracker" | "students" | "whatsapp";
 
 export default function AdminDashboardView() {
   const router = useRouter();
   const [data, setData] = useState<AdminDashboard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<AdminView>("jobs");
+  const [view, setView] = useState<AdminView>("overview");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [showJobModal, setShowJobModal] = useState(false);
+  const [editJob, setEditJob] = useState<Job | null>(null);
+  const [deleteJob, setDeleteJob] = useState<Job | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [waModal, setWaModal] = useState<{
     message: string;
     shareLinks: { groupName: string; shareUrl: string; inviteLink: string | null }[];
     title: string;
   } | null>(null);
+
+  // Filters
+  const [jobSearch, setJobSearch] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [deptFilter, setDeptFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  // Reminder
+  const [reminderModal, setReminderModal] = useState(false);
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderMsg, setReminderMsg] = useState("");
+  const [reminderDept, setReminderDept] = useState("ALL");
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const fetchData = useCallback(
     async (jobId?: string | null, studentId?: string | null) => {
@@ -82,61 +100,33 @@ export default function AdminDashboardView() {
 
   async function handleLogout() {
     await post("/api/auth/logout", {});
-    router.push("/");
+    router.push("/admin/login");
     router.refresh();
   }
 
   async function handleJobCreated(job: Job, sendEmail: boolean) {
-    setToast({ message: `Job "${job.company_name} — ${job.title}" posted!`, type: "success" });
-    // Send notifications
-    const res = await post<{
-      waMessage: string;
-      shareLinks: { groupName: string; shareUrl: string; inviteLink: string | null }[];
-      emailResult: { sent: number; total: number };
-    }>("/api/notify", {
-      action: "JOB_BROADCAST",
-      jobId: job.id,
-      sendEmail,
-      webhookPush: false,
-    });
-    if (res.ok && res.data) {
-      setWaModal({
-        message: res.data.waMessage,
-        shareLinks: res.data.shareLinks,
-        title: `📢 Share: ${job.company_name} — ${job.title}`,
+    setToast({ message: `✅ ${job.company_name} — ${job.title} posted!`, type: "success" });
+    fetchData();
+    if (sendEmail) {
+      await post("/api/notify", {
+        action: "JOB_BROADCAST",
+        jobId: job.id,
+        sendEmail: true,
+        webhookPush: false,
       });
     }
-    fetchData();
   }
 
   async function handleRemindUnapplied(jobId: string) {
-    setToast({ message: "Sending reminders...", type: "success" });
-    const res = await post<{
-      emailResult: { sent: number; total: number };
-      defaulterList: string;
-      unappliedCount: number;
-      waShareUrl: string;
-    }>("/api/notify", {
+    const res = await post<{ unappliedCount: number }>("/api/notify", {
       action: "REMIND_UNAPPLIED",
       jobId,
       sendEmail: true,
       webhookPush: false,
     });
-
-    if (res.ok && res.data) {
-      setWaModal({
-        message: res.data.defaulterList,
-        shareLinks: [
-          {
-            groupName: "Share Defaulter List",
-            shareUrl: res.data.waShareUrl,
-            inviteLink: null,
-          },
-        ],
-        title: `⚠️ Defaulter List — ${res.data.unappliedCount} students pending`,
-      });
+    if (res.ok) {
       setToast({
-        message: `Reminders sent. ${res.data.unappliedCount} students pending.`,
+        message: `📧 Reminders sent to ${res.data?.unappliedCount || 0} students`,
         type: "success",
       });
     } else {
@@ -151,688 +141,534 @@ export default function AdminDashboardView() {
     window.open(url, "_blank");
   }
 
+  async function handleSendReminder() {
+    setSendingReminder(true);
+    const res = await post("/api/command", {
+      type: "SEND_REMINDER",
+      title: reminderTitle,
+      message: reminderMsg,
+      department: reminderDept === "ALL" ? undefined : reminderDept,
+    });
+    if (res.ok) {
+      setToast({ message: "✅ Reminder sent!", type: "success" });
+      setReminderModal(false);
+      setReminderTitle("");
+      setReminderMsg("");
+      fetchData();
+    } else {
+      setToast({ message: res.error || "Failed", type: "error" });
+    }
+    setSendingReminder(false);
+  }
+
   if (loading) return <FullPageSpinner />;
   if (!data) return null;
 
-  const navItems: { key: AdminView; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: "jobs", label: "All Jobs", icon: <Briefcase className="h-4 w-4" />, count: data.jobs.length },
-    { key: "job-tracker", label: "Job Tracker", icon: <BarChart3 className="h-4 w-4" /> },
-    { key: "students", label: "Students", icon: <Users className="h-4 w-4" />, count: data.students.length },
-    { key: "whatsapp", label: "WhatsApp Groups", icon: <MessageSquare className="h-4 w-4" />, count: data.whatsapp_groups.length },
-  ];
+  const badges = {
+    drives: data.jobs.length,
+    students: data.students.length,
+    "help-chat": data.help_threads.reduce((s, t) => s + t.unread_count, 0),
+    whatsapp: data.whatsapp_groups.length,
+  };
+
+  // Filtered data
+  const filteredJobs = data.jobs.filter(
+    (j) =>
+      (j.company_name.toLowerCase().includes(jobSearch.toLowerCase()) ||
+        j.title.toLowerCase().includes(jobSearch.toLowerCase())) &&
+      (deptFilter === "ALL" || j.eligible_departments.includes(deptFilter) || j.eligible_departments.includes("ALL"))
+  );
+
+  const filteredStudents = data.students.filter(
+    (s) =>
+      (s.full_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+        s.email.toLowerCase().includes(studentSearch.toLowerCase()) ||
+        (s.roll_number || "").toLowerCase().includes(studentSearch.toLowerCase())) &&
+      (deptFilter === "ALL" || s.department === deptFilter) &&
+      (statusFilter === "ALL" ||
+        (statusFilter === "DEFAULTER" && s.not_applied > 0) ||
+        (statusFilter === "COMPLIANT" && s.not_applied === 0))
+  );
 
   return (
-    <div className="min-h-screen bg-surface-950">
+    <div className="flex min-h-screen bg-surface-950">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 glass border-b border-surface-700">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 shadow-lg shadow-primary-900/30">
-                <Shield className="h-5 w-5 text-white" />
+      {/* Sidebar */}
+      <AdminSidebar activeView={view} onViewChange={setView} badges={badges} />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Bar */}
+        <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-3 bg-surface-900/80 backdrop-blur border-b border-surface-700">
+          <h2 className="text-lg font-bold text-white capitalize">{view.replace("-", " ")}</h2>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowJobModal(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-primary-900/30 hover:from-primary-500 hover:to-primary-600 transition-all btn-lift"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Post Job</span>
+            </button>
+            <button
+              onClick={() => fetchData(selectedJobId, selectedStudentId)}
+              className="rounded-xl bg-surface-800 p-2 text-surface-400 hover:text-white transition-all"
+              title="Refresh"
+            >
+              <RefreshCcw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-xl bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 p-6 overflow-y-auto">
+          {/* ─── Overview ──────────────────────────────────── */}
+          {view === "overview" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KPICard label="Total Drives" value={data.jobs.length} icon={<Briefcase className="h-5 w-5" />} color="primary" />
+                <KPICard label="Active Drives" value={data.jobs.filter((j) => j.is_active).length} icon={<CheckCircle2 className="h-5 w-5" />} color="green" />
+                <KPICard label="Total Students" value={data.students.length} icon={<Users className="h-5 w-5" />} color="yellow" />
+                <KPICard
+                  label="Avg Completion"
+                  value={`${data.students.length > 0 ? Math.round(data.students.reduce((s, st) => s + st.completion_pct, 0) / data.students.length) : 0}%`}
+                  icon={<TrendingUp className="h-5 w-5" />}
+                  color="primary"
+                />
               </div>
+              {/* Recent Jobs */}
               <div>
-                <h1 className="text-lg font-bold text-white">ApplyForge</h1>
-                <p className="text-[10px] text-surface-400 -mt-0.5">Placement Officer</p>
+                <h3 className="text-sm font-semibold text-surface-300 mb-3">Recent Drives</h3>
+                <div className="space-y-2">
+                  {data.jobs.slice(0, 5).map((job) => (
+                    <div key={job.id} className="flex items-center justify-between rounded-xl bg-surface-800/50 border border-surface-700 p-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <PriorityBadge priority={job.priority} />
+                          <p className="text-sm font-semibold text-white">{job.company_name} — {job.title}</p>
+                        </div>
+                        <p className="text-xs text-surface-400 mt-0.5">{job.eligible_departments.join(", ")}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setEditJob(job); }} className="rounded-lg bg-surface-700 p-1.5 text-surface-400 hover:text-white transition-all"><Edit3 className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => { setSelectedJobId(job.id); setView("drives"); }} className="rounded-lg bg-surface-700 p-1.5 text-surface-400 hover:text-white transition-all"><Eye className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Recent Audit */}
+              <div>
+                <h3 className="text-sm font-semibold text-surface-300 mb-3">Recent Activity</h3>
+                <div className="space-y-1.5">
+                  {(data.audit_logs || []).slice(0, 5).map((log) => (
+                    <div key={log.id} className="flex items-center gap-3 rounded-lg bg-surface-800/30 px-3 py-2 text-xs text-surface-400">
+                      <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-medium text-surface-300">{log.actor_name}</span>
+                      <span>{log.action}</span>
+                      <span className="ml-auto text-surface-500">{new Date(log.created_at).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowJobModal(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-primary-900/30 hover:from-primary-500 hover:to-primary-600 transition-all btn-lift"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Post Job</span>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 rounded-xl bg-surface-800 px-3 py-2 text-sm text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
+          )}
+
+          {/* ─── Drives (Jobs) ─────────────────────────────── */}
+          {view === "drives" && (
+            <div className="space-y-4">
+              {/* Filters */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
+                  <input type="text" value={jobSearch} onChange={(e) => setJobSearch(e.target.value)} className="w-full rounded-xl bg-surface-800 border border-surface-700 pl-10 pr-4 py-2.5 text-sm text-white placeholder-surface-500" placeholder="Search jobs..." />
+                </div>
+                <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-white">
+                  <option value="ALL">All Departments</option>
+                  {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <button onClick={() => handleExport("students")} className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-surface-400 hover:text-white transition-all">
+                  <Download className="h-4 w-4" /> Export
+                </button>
+              </div>
+
+              {/* Job Detail View */}
+              {selectedJobId && data.job_detail ? (
+                <div className="space-y-4">
+                  <button onClick={() => setSelectedJobId(null)} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1">
+                    ← Back to all drives
+                  </button>
+                  <div className="rounded-2xl bg-surface-800/50 border border-surface-700 p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <PriorityBadge priority={data.job_detail.job.priority} />
+                          <h3 className="text-lg font-bold text-white">{data.job_detail.job.company_name} — {data.job_detail.job.title}</h3>
+                        </div>
+                        <p className="text-xs text-surface-400">{data.job_detail.job.eligible_departments.join(", ")} · {data.job_detail.job.package_ctc || "CTC N/A"} · {data.job_detail.job.location || "Location N/A"}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setEditJob(data.job_detail!.job)} className="flex items-center gap-1 rounded-lg bg-surface-700 px-3 py-1.5 text-xs text-surface-300 hover:text-white transition-all"><Edit3 className="h-3 w-3" /> Edit</button>
+                        <button onClick={() => setDeleteJob(data.job_detail!.job)} className="flex items-center gap-1 rounded-lg bg-red-500/10 text-red-400 px-3 py-1.5 text-xs hover:bg-red-500/20 transition-all"><Trash2 className="h-3 w-3" /> Delete</button>
+                        <button onClick={() => handleRemindUnapplied(data.job_detail!.job.id)} className="flex items-center gap-1 rounded-lg bg-amber-500/10 text-amber-400 px-3 py-1.5 text-xs hover:bg-amber-500/20 transition-all"><Bell className="h-3 w-3" /> Remind</button>
+                        <button onClick={() => handleExport("job", data.job_detail!.job.id)} className="flex items-center gap-1 rounded-lg bg-surface-700 px-3 py-1.5 text-xs text-surface-300 hover:text-white transition-all"><Download className="h-3 w-3" /> CSV</button>
+                      </div>
+                    </div>
+                    {/* KPIs */}
+                    <div className="grid grid-cols-5 gap-3 mb-4">
+                      <KPICard label="Assigned" value={data.job_detail.kpi.total_assigned} icon={<Users className="h-4 w-4" />} color="primary" />
+                      <KPICard label="Applied" value={data.job_detail.kpi.applied} icon={<CheckCircle2 className="h-4 w-4" />} color="green" />
+                      <KPICard label="Not Applied" value={data.job_detail.kpi.not_applied} icon={<Clock className="h-4 w-4" />} color="yellow" />
+                      <KPICard label="Trouble" value={data.job_detail.kpi.facing_trouble} icon={<AlertTriangle className="h-4 w-4" />} color="red" />
+                      <KPICard label="Completion" value={`${data.job_detail.kpi.applied_pct}%`} icon={<TrendingUp className="h-4 w-4" />} color="primary" />
+                    </div>
+                    {/* Applications Table */}
+                    <div className="rounded-xl border border-surface-700 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-surface-800">
+                          <tr>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Student</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Department</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Status</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Applied At</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-800">
+                          {data.job_detail.applications.map((app) => {
+                            const s = app.student as Profile;
+                            return (
+                              <tr key={app.id} className="hover:bg-surface-800/30 transition-colors">
+                                <td className="px-4 py-2.5 text-white">{s?.full_name || "—"}</td>
+                                <td className="px-4 py-2.5 text-surface-400">{s?.department || "—"}</td>
+                                <td className="px-4 py-2.5"><StatusBadge status={app.status} /></td>
+                                <td className="px-4 py-2.5 text-surface-400 text-xs">{app.applied_at ? new Date(app.applied_at).toLocaleString() : "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Jobs List */
+                <div className="space-y-3">
+                  {filteredJobs.length === 0 ? (
+                    <EmptyState icon={<Briefcase className="h-8 w-8" />} title="No jobs yet" description='Click "Post Job" to create your first placement opportunity.' />
+                  ) : (
+                    filteredJobs.map((job) => (
+                      <div key={job.id} className="group flex items-center justify-between rounded-2xl bg-surface-800/50 border border-surface-700 p-5 transition-all hover:border-surface-600 hover:shadow-lg">
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedJobId(job.id)}>
+                          <div className="flex items-center gap-3 mb-1">
+                            <PriorityBadge priority={job.priority} />
+                            {!job.is_active && <span className="rounded-full bg-surface-600/50 px-2.5 py-0.5 text-xs text-surface-400">Inactive</span>}
+                            <h3 className="text-sm font-semibold text-white truncate">{job.company_name} — {job.title}</h3>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-surface-400">
+                            <span>{job.eligible_departments.join(", ")}</span>
+                            {job.package_ctc && <span>💰 {job.package_ctc}</span>}
+                            {job.deadline && <span>📅 {new Date(job.deadline).toLocaleDateString()}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setEditJob(job)} className="rounded-lg bg-surface-700 p-2 text-surface-400 hover:text-white transition-all" title="Edit"><Edit3 className="h-4 w-4" /></button>
+                          <button onClick={() => setDeleteJob(job)} className="rounded-lg bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 className="h-4 w-4" /></button>
+                          <button onClick={async () => {
+                            const res = await post<{ waMessage: string; shareLinks: { groupName: string; shareUrl: string; inviteLink: string | null }[] }>("/api/notify", { action: "JOB_BROADCAST", jobId: job.id, sendEmail: false, webhookPush: false });
+                            if (res.ok && res.data) { setWaModal({ message: res.data.waMessage, shareLinks: res.data.shareLinks, title: `📢 Share: ${job.company_name} — ${job.title}` }); }
+                          }} className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400 hover:bg-emerald-500/20 transition-all" title="Share"><ExternalLink className="h-4 w-4" /></button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      </header>
+          )}
 
-      {/* Navigation Tabs */}
-      <div className="border-b border-surface-800 bg-surface-900/50">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-1 overflow-x-auto py-2">
-            {navItems.map((item) => (
-              <button
-                key={item.key}
-                onClick={() => {
-                  setView(item.key);
-                  if (item.key !== "job-tracker") setSelectedJobId(null);
-                  if (item.key !== "students") setSelectedStudentId(null);
-                }}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
-                  view === item.key
-                    ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
-                    : "text-surface-400 hover:bg-surface-800 hover:text-surface-300"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-                {item.count !== undefined && (
-                  <span className="rounded-full bg-surface-700 px-2 py-0.5 text-xs text-surface-400">
-                    {item.count}
-                  </span>
+          {/* ─── Students ──────────────────────────────────── */}
+          {view === "students" && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
+                  <input type="text" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="w-full rounded-xl bg-surface-800 border border-surface-700 pl-10 pr-4 py-2.5 text-sm text-white placeholder-surface-500" placeholder="Search students..." />
+                </div>
+                <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-white">
+                  <option value="ALL">All Departments</option>
+                  {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-white">
+                  <option value="ALL">All Students</option>
+                  <option value="DEFAULTER">Defaulters</option>
+                  <option value="COMPLIANT">Compliant</option>
+                </select>
+                <button onClick={() => handleExport("students")} className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-surface-400 hover:text-white transition-all">
+                  <Download className="h-4 w-4" /> Export
+                </button>
+              </div>
+
+              {/* Student Detail */}
+              {selectedStudentId && data.student_detail ? (
+                <div className="space-y-4">
+                  <button onClick={() => setSelectedStudentId(null)} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1">← Back to all students</button>
+                  <div className="rounded-2xl bg-surface-800/50 border border-surface-700 p-6">
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="h-12 w-12 rounded-full bg-primary-600/20 flex items-center justify-center"><Users className="h-6 w-6 text-primary-400" /></div>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">{data.student_detail.student.full_name}</h3>
+                        <p className="text-xs text-surface-400">{data.student_detail.student.department} · {data.student_detail.student.email} · {data.student_detail.student.phone}</p>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-surface-700 overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-surface-800">
+                          <tr>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Job</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Status</th>
+                            <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Applied At</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-800">
+                          {data.student_detail.applications.map((app) => (
+                            <tr key={app.id} className="hover:bg-surface-800/30 transition-colors">
+                              <td className="px-4 py-2.5 text-white">{(app.job as Job).company_name} — {(app.job as Job).title}</td>
+                              <td className="px-4 py-2.5"><StatusBadge status={app.status} /></td>
+                              <td className="px-4 py-2.5 text-surface-400 text-xs">{app.applied_at ? new Date(app.applied_at).toLocaleString() : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-surface-700 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-surface-800">
+                      <tr>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Student</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Dept</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Applied</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Not Applied</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Trouble</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Completion</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-800">
+                      {filteredStudents.map((s) => (
+                        <tr key={s.id} className="hover:bg-surface-800/30 transition-colors">
+                          <td className="px-4 py-2.5">
+                            <p className="text-white font-medium">{s.full_name}</p>
+                            <p className="text-[11px] text-surface-500">{s.email}</p>
+                          </td>
+                          <td className="px-4 py-2.5 text-surface-400">{s.department}</td>
+                          <td className="px-4 py-2.5 text-emerald-400 font-medium">{s.applied}</td>
+                          <td className="px-4 py-2.5 text-amber-400 font-medium">{s.not_applied}</td>
+                          <td className="px-4 py-2.5 text-red-400 font-medium">{s.facing_trouble}</td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 rounded-full bg-surface-700 overflow-hidden">
+                                <div className="h-full rounded-full bg-primary-500" style={{ width: `${s.completion_pct}%` }} />
+                              </div>
+                              <span className="text-xs text-surface-400">{s.completion_pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <button onClick={() => setSelectedStudentId(s.id)} className="rounded-lg bg-surface-700 p-1.5 text-surface-400 hover:text-white transition-all"><Eye className="h-3.5 w-3.5" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── Analytics ─────────────────────────────────── */}
+          {view === "analytics" && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KPICard label="Total Drives" value={data.jobs.length} icon={<Briefcase className="h-5 w-5" />} color="primary" />
+                <KPICard label="Total Students" value={data.students.length} icon={<Users className="h-5 w-5" />} color="yellow" />
+                <KPICard label="Avg Completion" value={`${data.students.length > 0 ? Math.round(data.students.reduce((s, st) => s + st.completion_pct, 0) / data.students.length) : 0}%`} icon={<TrendingUp className="h-5 w-5" />} color="green" />
+                <KPICard label="Help Requests" value={data.help_threads.length} icon={<MessageSquare className="h-5 w-5" />} color="red" />
+              </div>
+              {/* Department Breakdown */}
+              <div className="rounded-2xl bg-surface-800/50 border border-surface-700 p-6">
+                <h3 className="text-sm font-semibold text-surface-300 mb-4">Department Breakdown</h3>
+                <div className="space-y-3">
+                  {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((dept) => {
+                    const count = data.students.filter((s) => s.department === dept).length;
+                    const avgPct = count > 0 ? Math.round(data.students.filter((s) => s.department === dept).reduce((acc, s) => acc + s.completion_pct, 0) / count) : 0;
+                    return (
+                      <div key={dept} className="flex items-center gap-4">
+                        <span className="text-xs font-medium text-surface-300 w-16">{dept}</span>
+                        <div className="flex-1 h-2 rounded-full bg-surface-700 overflow-hidden">
+                          <div className="h-full rounded-full bg-primary-500" style={{ width: `${avgPct}%` }} />
+                        </div>
+                        <span className="text-xs text-surface-400 w-12 text-right">{avgPct}%</span>
+                        <span className="text-xs text-surface-500 w-16 text-right">{count} students</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Help Chat ─────────────────────────────────── */}
+          {view === "help-chat" && (
+            <AdminHelpChat threads={data.help_threads} onRefresh={() => fetchData()} adminId="" />
+          )}
+
+          {/* ─── Notifications ─────────────────────────────── */}
+          {view === "notifications" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-surface-300">Send Notifications & Reminders</h3>
+                <button onClick={() => setReminderModal(true)} className="flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-500 transition-all">
+                  <Send className="h-4 w-4" /> Send Reminder
+                </button>
+              </div>
+              {/* Sent Notifications List */}
+              <div className="space-y-2">
+                {(data.notifications_sent || []).length === 0 ? (
+                  <EmptyState icon={<Bell className="h-8 w-8" />} title="No notifications sent" description="Send reminders to keep students on track." />
+                ) : (
+                  (data.notifications_sent || []).map((n) => (
+                    <div key={n.id} className="rounded-xl bg-surface-800/50 border border-surface-700 px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-white">{n.title}</p>
+                        <p className="text-xs text-surface-400">{n.message}</p>
+                      </div>
+                      <span className="text-[10px] text-surface-500">{new Date(n.created_at).toLocaleString()}</span>
+                    </div>
+                  ))
                 )}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+              </div>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {view === "jobs" && (
-          <JobsListView
-            jobs={data.jobs}
-            onSelectJob={(id) => {
-              setSelectedJobId(id);
-              setView("job-tracker");
-            }}
-            onShareJob={async (job) => {
-              const res = await post<{
-                waMessage: string;
-                shareLinks: { groupName: string; shareUrl: string; inviteLink: string | null }[];
-              }>("/api/notify", {
-                action: "JOB_BROADCAST",
-                jobId: job.id,
-                sendEmail: false,
-                webhookPush: false,
-              });
-              if (res.ok && res.data) {
-                setWaModal({
-                  message: res.data.waMessage,
-                  shareLinks: res.data.shareLinks,
-                  title: `📢 Share: ${job.company_name} — ${job.title}`,
-                });
-              }
-            }}
-          />
-        )}
-        {view === "job-tracker" && (
-          <JobTrackerView
-            data={data}
-            jobs={data.jobs}
-            selectedJobId={selectedJobId}
-            onSelectJob={(id) => setSelectedJobId(id)}
-            onRemindUnapplied={handleRemindUnapplied}
-            onExport={handleExport}
-          />
-        )}
-        {view === "students" && (
-          <StudentsView
-            students={data.students}
-            studentDetail={data.student_detail}
-            selectedStudentId={selectedStudentId}
-            onSelectStudent={(id) => setSelectedStudentId(id)}
-            onExport={() => handleExport("students")}
-          />
-        )}
-        {view === "whatsapp" && (
-          <WhatsAppGroupsView
-            groups={data.whatsapp_groups}
-            onRefresh={() => fetchData()}
-            setToast={setToast}
-          />
-        )}
-      </main>
+              {/* Reminder Modal */}
+              {reminderModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                  <div className="w-full max-w-lg bg-surface-900 rounded-2xl border border-surface-700 p-6">
+                    <h3 className="text-lg font-bold text-white mb-4">Send Reminder</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-surface-300 mb-1">Title</label>
+                        <input type="text" value={reminderTitle} onChange={(e) => setReminderTitle(e.target.value)} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-2.5 text-sm text-white" placeholder="Reminder title..." />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-surface-300 mb-1">Message</label>
+                        <textarea value={reminderMsg} onChange={(e) => setReminderMsg(e.target.value)} rows={3} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-2.5 text-sm text-white resize-none" placeholder="Your message..." />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-surface-300 mb-1">Target Department</label>
+                        <select value={reminderDept} onChange={(e) => setReminderDept(e.target.value)} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-2.5 text-sm text-white">
+                          <option value="ALL">All Departments</option>
+                          {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={() => setReminderModal(false)} className="flex-1 rounded-xl bg-surface-800 px-4 py-2.5 text-sm text-surface-300 hover:bg-surface-700 transition-all">Cancel</button>
+                        <button onClick={handleSendReminder} disabled={!reminderTitle || !reminderMsg || sendingReminder} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-50 transition-all">
+                          {sendingReminder ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4" /> Send</>}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── WhatsApp Groups ───────────────────────────── */}
+          {view === "whatsapp" && (
+            <WhatsAppGroupsView
+              groups={data.whatsapp_groups}
+              onRefresh={() => fetchData()}
+              setToast={setToast}
+            />
+          )}
+
+          {/* ─── Audit Logs ────────────────────────────────── */}
+          {view === "audit-logs" && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-surface-300">Activity & Audit Log</h3>
+              <div className="rounded-xl border border-surface-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-800">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Time</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Actor</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Action</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-surface-400">Entity</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-800">
+                    {(data.audit_logs || []).map((log) => (
+                      <tr key={log.id} className="hover:bg-surface-800/30 transition-colors">
+                        <td className="px-4 py-2.5 text-surface-400 text-xs">{new Date(log.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-2.5 text-white">{log.actor_name}</td>
+                        <td className="px-4 py-2.5"><span className="rounded-full bg-primary-500/10 text-primary-400 px-2 py-0.5 text-xs font-medium">{log.action}</span></td>
+                        <td className="px-4 py-2.5 text-surface-400">{log.entity_type}{log.entity_id ? ` #${log.entity_id.slice(0, 8)}` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Settings ──────────────────────────────────── */}
+          {view === "settings" && (
+            <div className="space-y-6">
+              <div className="rounded-2xl bg-surface-800/50 border border-surface-700 p-6">
+                <h3 className="text-lg font-bold text-white mb-2">Application Settings</h3>
+                <p className="text-sm text-surface-400 mb-4">Manage your ApplyForge placement portal configuration.</p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between rounded-xl bg-surface-800 border border-surface-700 p-4">
+                    <div>
+                      <p className="text-sm font-medium text-white">Email Notifications</p>
+                      <p className="text-xs text-surface-500">Send emails when new jobs are posted</p>
+                    </div>
+                    <div className="h-6 w-11 rounded-full bg-primary-500 relative cursor-pointer">
+                      <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow translate-x-5 transition-transform" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl bg-surface-800 border border-surface-700 p-4">
+                    <div>
+                      <p className="text-sm font-medium text-white">Auto-assign Jobs</p>
+                      <p className="text-xs text-surface-500">Automatically assign new jobs to eligible students</p>
+                    </div>
+                    <div className="h-6 w-11 rounded-full bg-primary-500 relative cursor-pointer">
+                      <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow translate-x-5 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* Modals */}
-      <CreateJobModal
-        isOpen={showJobModal}
-        onClose={() => setShowJobModal(false)}
-        whatsappGroups={data.whatsapp_groups}
-        onJobCreated={handleJobCreated}
-      />
-      {waModal && (
-        <WhatsAppBroadcastModal
-          isOpen
-          onClose={() => setWaModal(null)}
-          message={waModal.message}
-          shareLinks={waModal.shareLinks}
-          title={waModal.title}
-        />
-      )}
+      <CreateJobModal isOpen={showJobModal} onClose={() => setShowJobModal(false)} whatsappGroups={data.whatsapp_groups} onJobCreated={handleJobCreated} />
+      {editJob && <EditJobModal isOpen={!!editJob} onClose={() => setEditJob(null)} job={editJob} whatsappGroups={data.whatsapp_groups} onJobUpdated={() => { fetchData(); setEditJob(null); }} />}
+      {deleteJob && <DeleteJobModal isOpen={!!deleteJob} onClose={() => setDeleteJob(null)} job={deleteJob} onJobDeleted={() => { fetchData(); setDeleteJob(null); setSelectedJobId(null); }} />}
+      {waModal && <WhatsAppBroadcastModal isOpen onClose={() => setWaModal(null)} message={waModal.message} shareLinks={waModal.shareLinks} title={waModal.title} />}
     </div>
   );
 }
 
-/* ─── Jobs List View ──────────────────────────────────── */
-function JobsListView({
-  jobs,
-  onSelectJob,
-  onShareJob,
-}: {
-  jobs: Job[];
-  onSelectJob: (id: string) => void;
-  onShareJob: (job: Job) => void;
-}) {
-  const [search, setSearch] = useState("");
-
-  const filtered = jobs.filter(
-    (j) =>
-      j.company_name.toLowerCase().includes(search.toLowerCase()) ||
-      j.title.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-white">All Posted Jobs</h2>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-64 rounded-xl bg-surface-800 border border-surface-700 pl-10 pr-4 py-2.5 text-sm text-white placeholder-surface-500"
-            placeholder="Search jobs..."
-          />
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={<Briefcase className="h-8 w-8" />}
-          title="No jobs yet"
-          description='Click "Post Job" to create your first placement opportunity.'
-        />
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((job) => (
-            <div
-              key={job.id}
-              className="group flex items-center justify-between rounded-2xl bg-surface-800/50 border border-surface-700 p-5 transition-all hover:border-surface-600 hover:shadow-lg"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-1">
-                  <PriorityBadge priority={job.priority} />
-                  {!job.is_active && (
-                    <span className="rounded-full bg-surface-600/50 px-2.5 py-0.5 text-xs text-surface-400">
-                      Inactive
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-white font-semibold text-base">{job.company_name}</h3>
-                <p className="text-surface-400 text-sm">{job.title}</p>
-                <div className="flex items-center gap-3 mt-2 text-xs text-surface-500">
-                  {job.package_ctc && <span>💰 {job.package_ctc}</span>}
-                  {job.location && <span>📍 {job.location}</span>}
-                  {job.deadline && (
-                    <span>
-                      📅{" "}
-                      {new Date(job.deadline).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 ml-4">
-                <button
-                  onClick={() => onShareJob(job)}
-                  className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-                  title="Share to WhatsApp"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => onSelectJob(job.id)}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary-500/10 border border-primary-500/20 px-3 py-2.5 text-sm text-primary-300 hover:bg-primary-500/20 transition-all"
-                >
-                  <Eye className="h-4 w-4" />
-                  Track
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Job Tracker View ─────────────────────────────────── */
-function JobTrackerView({
-  data,
-  jobs,
-  selectedJobId,
-  onSelectJob,
-  onRemindUnapplied,
-  onExport,
-}: {
-  data: AdminDashboard;
-  jobs: Job[];
-  selectedJobId: string | null;
-  onSelectJob: (id: string) => void;
-  onRemindUnapplied: (jobId: string) => void;
-  onExport: (type: string, jobId?: string, status?: string) => void;
-}) {
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [search, setSearch] = useState("");
-  const [deptFilter, setDeptFilter] = useState("ALL");
-
-  if (!selectedJobId) {
-    return (
-      <div>
-        <h2 className="text-xl font-bold text-white mb-4">Select a Job to Track</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {jobs.map((job) => (
-            <button
-              key={job.id}
-              onClick={() => onSelectJob(job.id)}
-              className="group text-left rounded-2xl bg-surface-800/50 border border-surface-700 p-4 transition-all hover:border-primary-500/30 hover:bg-surface-800"
-            >
-              <PriorityBadge priority={job.priority} />
-              <h3 className="text-white font-semibold mt-2">{job.company_name}</h3>
-              <p className="text-surface-400 text-sm">{job.title}</p>
-              <div className="flex items-center gap-1 mt-2 text-primary-400 text-xs">
-                <span>View Tracker</span>
-                <ChevronRight className="h-3 w-3" />
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const detail = data.job_detail;
-  if (!detail) return <FullPageSpinner />;
-
-  const { job, kpi, applications } = detail;
-
-  const filteredApps = applications.filter((app) => {
-    const student = app.student as unknown as Profile;
-    if (!student) return false;
-    if (statusFilter !== "ALL" && app.status !== statusFilter) return false;
-    if (deptFilter !== "ALL" && student.department !== deptFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        student.full_name.toLowerCase().includes(q) ||
-        (student.roll_number || "").toLowerCase().includes(q) ||
-        student.email.toLowerCase().includes(q) ||
-        student.phone.includes(q)
-      );
-    }
-    return true;
-  });
-
-  const statusTabs = [
-    { key: "ALL", label: "All", count: kpi.total_assigned },
-    { key: "APPLIED", label: "Applied", count: kpi.applied },
-    { key: "NOT_APPLIED", label: "Not Applied", count: kpi.not_applied },
-    { key: "FACING_TROUBLE", label: "Trouble", count: kpi.facing_trouble },
-    { key: "NOT_ELIGIBLE", label: "Not Eligible", count: kpi.not_eligible },
-  ];
-
-  return (
-    <div>
-      {/* Job Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <button
-            onClick={() => onSelectJob("")}
-            className="text-xs text-primary-400 hover:text-primary-300 mb-2 transition-colors"
-          >
-            ← Back to Job Selection
-          </button>
-          <div className="flex items-center gap-3">
-            <PriorityBadge priority={job.priority} />
-            <div>
-              <h2 className="text-xl font-bold text-white">{job.company_name}</h2>
-              <p className="text-surface-400">{job.title}</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onRemindUnapplied(job.id)}
-            className="flex items-center gap-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-sm text-amber-300 hover:bg-amber-500/20 transition-all"
-          >
-            <Bell className="h-4 w-4" />
-            Remind Unapplied
-          </button>
-          <button
-            onClick={() => onExport("job", job.id)}
-            className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2 text-sm text-surface-300 hover:bg-surface-700 transition-all"
-          >
-            <Download className="h-4 w-4" />
-            CSV
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-        <KPICard label="Total Assigned" value={kpi.total_assigned} icon={<Users className="h-5 w-5" />} color="primary" />
-        <KPICard label="Applied" value={kpi.applied} icon={<CheckCircle2 className="h-5 w-5" />} color="green" subtitle={`${kpi.applied_pct}%`} />
-        <KPICard label="Not Applied" value={kpi.not_applied} icon={<Clock className="h-5 w-5" />} color="yellow" />
-        <KPICard label="Trouble" value={kpi.facing_trouble} icon={<AlertTriangle className="h-5 w-5" />} color="red" />
-        <KPICard label="Not Eligible" value={kpi.not_eligible} icon={<UserCheck className="h-5 w-5" />} color="gray" />
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex gap-1 overflow-x-auto">
-          {statusTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setStatusFilter(tab.key)}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all whitespace-nowrap ${
-                statusFilter === tab.key
-                  ? "bg-primary-600/20 text-primary-300 border border-primary-500/30"
-                  : "bg-surface-800 text-surface-400 border border-surface-700 hover:bg-surface-700"
-              }`}
-            >
-              {tab.label}
-              <span className="rounded-full bg-surface-700/50 px-1.5 py-0.5 text-[10px]">{tab.count}</span>
-            </button>
-          ))}
-        </div>
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl bg-surface-800 border border-surface-700 pl-10 pr-4 py-2 text-sm text-white placeholder-surface-500"
-            placeholder="Search by name, roll no, email..."
-          />
-        </div>
-      </div>
-
-      {/* Student Table */}
-      <div className="rounded-2xl bg-surface-800/30 border border-surface-700 overflow-hidden">
-        <div className="overflow-x-auto custom-scroll">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-700">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Student</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Dept</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Link Clicked</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Applied At</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-700/50">
-              {filteredApps.map((app) => {
-                const student = app.student as unknown as Profile;
-                if (!student) return null;
-                return (
-                  <tr key={app.id} className="hover:bg-surface-700/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-white font-medium">{student.full_name}</p>
-                        <p className="text-xs text-surface-500">
-                          {student.roll_number ? `${student.roll_number} • ` : ""}{student.phone}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-surface-400">{student.department}</td>
-                    <td className="px-4 py-3"><StatusBadge status={app.status} /></td>
-                    <td className="px-4 py-3 text-xs text-surface-400">
-                      {app.link_clicked_at
-                        ? new Date(app.link_clicked_at).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-surface-400">
-                      {app.applied_at
-                        ? new Date(app.applied_at).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-surface-400">
-                      {app.application_ref && <span className="text-emerald-400">Ref: {app.application_ref}</span>}
-                      {app.issue_category && (
-                        <span className="text-red-400">{app.issue_category.replace(/_/g, " ")}</span>
-                      )}
-                      {app.issue_note && <p className="text-surface-500 mt-0.5 truncate max-w-[200px]">{app.issue_note}</p>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {filteredApps.length === 0 && (
-          <div className="py-12 text-center text-surface-500 text-sm">
-            No students match your filters.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Students View ────────────────────────────────────── */
-function StudentsView({
-  students,
-  studentDetail,
-  selectedStudentId,
-  onSelectStudent,
-  onExport,
-}: {
-  students: StudentRow[];
-  studentDetail?: AdminDashboard["student_detail"];
-  selectedStudentId: string | null;
-  onSelectStudent: (id: string | null) => void;
-  onExport: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [deptFilter, setDeptFilter] = useState("ALL");
-
-  const filtered = students.filter((s) => {
-    if (deptFilter !== "ALL" && s.department !== deptFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        s.full_name.toLowerCase().includes(q) ||
-        (s.roll_number || "").toLowerCase().includes(q) ||
-        s.email.toLowerCase().includes(q) ||
-        s.phone.includes(q)
-      );
-    }
-    return true;
-  });
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-white">Student Compliance Tracker</h2>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-64 rounded-xl bg-surface-800 border border-surface-700 pl-10 pr-4 py-2.5 text-sm text-white placeholder-surface-500"
-              placeholder="Search students..."
-            />
-          </div>
-          <button
-            onClick={onExport}
-            className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-surface-300 hover:bg-surface-700 transition-all"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-2xl bg-surface-800/30 border border-surface-700 overflow-hidden">
-        <div className="overflow-x-auto custom-scroll">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-surface-700">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Roll No</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Dept</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">CGPA</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Total Jobs</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Applied</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Pending</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Trouble</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider">Completion</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-400 uppercase tracking-wider"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-700/50">
-              {filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-surface-700/30 transition-colors cursor-pointer" onClick={() => onSelectStudent(s.id)}>
-                  <td className="px-4 py-3 text-surface-300 font-mono text-xs">{s.roll_number || "—"}</td>
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="text-white font-medium">{s.full_name}</p>
-                      <p className="text-xs text-surface-500">{s.phone}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-surface-400">{s.department}</td>
-                  <td className="px-4 py-3 text-surface-300">{s.cgpa ?? "—"}</td>
-                  <td className="px-4 py-3 text-surface-300">{s.total_jobs}</td>
-                  <td className="px-4 py-3 text-emerald-400 font-medium">{s.applied}</td>
-                  <td className="px-4 py-3 text-amber-400 font-medium">{s.not_applied}</td>
-                  <td className="px-4 py-3 text-red-400 font-medium">{s.facing_trouble}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-20 rounded-full bg-surface-700 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-500 transition-all"
-                          style={{ width: `${s.completion_pct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-surface-400">{s.completion_pct}%</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <ChevronRight className="h-4 w-4 text-surface-500" />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {filtered.length === 0 && (
-          <div className="py-12 text-center text-surface-500 text-sm">No students found.</div>
-        )}
-      </div>
-
-      {/* Student Detail Drawer */}
-      {selectedStudentId && studentDetail && (
-        <Drawer
-          isOpen
-          onClose={() => onSelectStudent(null)}
-          title={`${studentDetail.student.full_name} — Application History`}
-        >
-          <div className="space-y-4">
-            {/* Student Info */}
-            <div className="rounded-xl bg-surface-800 border border-surface-700 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <Hash className="h-4 w-4 text-surface-500" />
-                <span className="text-surface-300">{studentDetail.student.roll_number}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Mail className="h-4 w-4 text-surface-500" />
-                <span className="text-surface-300">{studentDetail.student.email}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Phone className="h-4 w-4 text-surface-500" />
-                <span className="text-surface-300">{studentDetail.student.phone}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <GraduationCap className="h-4 w-4 text-surface-500" />
-                <span className="text-surface-300">{studentDetail.student.department}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <BookOpen className="h-4 w-4 text-surface-500" />
-                <span className="text-surface-300">CGPA: {studentDetail.student.cgpa ?? "—"}</span>
-              </div>
-            </div>
-
-            {/* Application History */}
-            <h3 className="text-sm font-semibold text-surface-300">Job History</h3>
-            {studentDetail.applications.length === 0 ? (
-              <p className="text-sm text-surface-500">No jobs assigned yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {studentDetail.applications.map((app) => {
-                  const job = app.job;
-                  return (
-                    <div
-                      key={app.id}
-                      className="rounded-xl bg-surface-800/50 border border-surface-700 p-4"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <PriorityBadge priority={job.priority} />
-                        <StatusBadge status={app.status} />
-                      </div>
-                      <h4 className="text-white font-medium">{job.company_name}</h4>
-                      <p className="text-surface-400 text-sm">{job.title}</p>
-                      <div className="mt-2 space-y-1 text-xs text-surface-500">
-                        {app.link_clicked_at && (
-                          <p>
-                            🔗 Link opened:{" "}
-                            {new Date(app.link_clicked_at).toLocaleDateString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                        )}
-                        {app.applied_at && (
-                          <p className="text-emerald-400">
-                            ✅ Applied:{" "}
-                            {new Date(app.applied_at).toLocaleDateString("en-IN", {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                            {app.application_ref && ` • Ref: ${app.application_ref}`}
-                          </p>
-                        )}
-                        {app.issue_category && (
-                          <p className="text-red-400">
-                            ⚠️ {app.issue_category.replace(/_/g, " ")}
-                            {app.issue_note && `: ${app.issue_note}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </Drawer>
-      )}
-    </div>
-  );
-}
-
-/* ─── WhatsApp Groups View ─────────────────────────────── */
+/* ─── WhatsApp Groups View (extracted) ──────────────────── */
 function WhatsAppGroupsView({
   groups,
   onRefresh,
@@ -843,23 +679,35 @@ function WhatsAppGroupsView({
   setToast: (t: { message: string; type: "success" | "error" }) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<WhatsAppGroup | null>(null);
   const [form, setForm] = useState({ name: "", departmentTag: "ALL", inviteLink: "", groupJid: "" });
   const [saving, setSaving] = useState(false);
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  function resetForm() {
+    setForm({ name: "", departmentTag: "ALL", inviteLink: "", groupJid: "" });
+    setEditingGroup(null);
+    setShowForm(false);
+  }
+
+  function startEdit(g: WhatsAppGroup) {
+    setForm({ name: g.name, departmentTag: g.department_tag, inviteLink: g.invite_link || "", groupJid: g.group_jid || "" });
+    setEditingGroup(g);
+    setShowForm(true);
+  }
+
+  async function handleSave() {
     setSaving(true);
     const res = await post("/api/command", {
       type: "SAVE_WHATSAPP_GROUP",
+      ...(editingGroup ? { id: editingGroup.id } : {}),
       name: form.name,
       departmentTag: form.departmentTag,
       inviteLink: form.inviteLink || undefined,
       groupJid: form.groupJid || undefined,
     });
     if (res.ok) {
-      setToast({ message: "Group saved!", type: "success" });
-      setShowForm(false);
-      setForm({ name: "", departmentTag: "ALL", inviteLink: "", groupJid: "" });
+      setToast({ message: editingGroup ? "Group updated!" : "Group added!", type: "success" });
+      resetForm();
       onRefresh();
     } else {
       setToast({ message: res.error || "Failed", type: "error" });
@@ -867,140 +715,66 @@ function WhatsAppGroupsView({
     setSaving(false);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this WhatsApp group?")) return;
-    const res = await post("/api/command", {
-      type: "DELETE_WHATSAPP_GROUP",
-      groupId: id,
-    });
+  async function handleDelete(groupId: string) {
+    const res = await post("/api/command", { type: "DELETE_WHATSAPP_GROUP", groupId });
     if (res.ok) {
       setToast({ message: "Group deleted", type: "success" });
       onRefresh();
-    } else {
-      setToast({ message: res.error || "Failed", type: "error" });
     }
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-white">WhatsApp Groups</h2>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2 text-sm font-medium text-white transition-all hover:from-emerald-500 hover:to-emerald-600 btn-lift"
-        >
-          <Plus className="h-4 w-4" />
-          Add Group
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-surface-300">WhatsApp Groups</h3>
+        <button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-all">
+          <Plus className="h-4 w-4" /> Add Group
         </button>
       </div>
 
       {showForm && (
-        <form
-          onSubmit={handleSave}
-          className="mb-6 rounded-2xl bg-surface-800/50 border border-surface-700 p-5 space-y-4 animate-fadeIn"
-        >
+        <div className="rounded-2xl bg-surface-800/50 border border-surface-700 p-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">Group Name</label>
-              <input
-                required
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500"
-                placeholder="CSE 2027 Placements"
-              />
+            <div>
+              <label className="block text-sm font-medium text-surface-300 mb-1">Group Name</label>
+              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-2.5 text-sm text-white" placeholder="CSE 2027" />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">Department Tag</label>
-              <input
-                required
-                value={form.departmentTag}
-                onChange={(e) => setForm({ ...form, departmentTag: e.target.value })}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500"
-                placeholder="CSE, ALL, etc."
-              />
+            <div>
+              <label className="block text-sm font-medium text-surface-300 mb-1">Department</label>
+              <select value={form.departmentTag} onChange={(e) => setForm({ ...form, departmentTag: e.target.value })} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-3 py-2.5 text-sm text-white">
+                <option value="ALL">ALL</option>
+                {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">Invite Link</label>
-              <input
-                value={form.inviteLink}
-                onChange={(e) => setForm({ ...form, inviteLink: e.target.value })}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500"
-                placeholder="https://chat.whatsapp.com/..."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-surface-300">Group JID (Optional)</label>
-              <input
-                value={form.groupJid}
-                onChange={(e) => setForm({ ...form, groupJid: e.target.value })}
-                className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-3 text-sm text-white placeholder-surface-500"
-                placeholder="120363xxx@g.us"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-surface-300 mb-1">Invite Link</label>
+            <input type="text" value={form.inviteLink} onChange={(e) => setForm({ ...form, inviteLink: e.target.value })} className="w-full rounded-xl bg-surface-800 border border-surface-600 px-4 py-2.5 text-sm text-white" placeholder="https://chat.whatsapp.com/..." />
           </div>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-500 transition-all disabled:opacity-60"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Group"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="rounded-xl bg-surface-700 px-4 py-2.5 text-sm text-surface-300 hover:bg-surface-600 transition-all"
-            >
-              Cancel
+          <div className="flex gap-3">
+            <button onClick={resetForm} className="rounded-xl bg-surface-800 px-4 py-2.5 text-sm text-surface-300 hover:bg-surface-700 transition-all">Cancel</button>
+            <button onClick={handleSave} disabled={!form.name || saving} className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-all">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {editingGroup ? "Update" : "Save"}
             </button>
           </div>
-        </form>
-      )}
-
-      {groups.length === 0 ? (
-        <EmptyState
-          icon={<MessageSquare className="h-8 w-8" />}
-          title="No WhatsApp groups"
-          description="Add your college WhatsApp groups to share job opportunities."
-        />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {groups.map((g) => (
-            <div
-              key={g.id}
-              className="flex items-center justify-between rounded-2xl bg-surface-800/50 border border-surface-700 p-4"
-            >
-              <div>
-                <h3 className="text-white font-medium">{g.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-xs text-emerald-300">
-                    {g.department_tag}
-                  </span>
-                  {g.invite_link && (
-                    <a
-                      href={g.invite_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary-400 hover:text-primary-300"
-                    >
-                      <ExternalLink className="h-3 w-3 inline" /> Link
-                    </a>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => handleDelete(g.id)}
-                className="rounded-lg p-2 text-surface-500 hover:bg-red-500/10 hover:text-red-400 transition-all"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
         </div>
       )}
+
+      <div className="space-y-2">
+        {groups.map((g) => (
+          <div key={g.id} className="flex items-center justify-between rounded-xl bg-surface-800/50 border border-surface-700 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">{g.name}</p>
+              <p className="text-xs text-surface-400">{g.department_tag} · {g.invite_link ? "Has invite link" : "No invite link"}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => startEdit(g)} className="rounded-lg bg-surface-700 p-1.5 text-surface-400 hover:text-white transition-all"><Edit3 className="h-3.5 w-3.5" /></button>
+              <button onClick={() => handleDelete(g.id)} className="rounded-lg bg-red-500/10 p-1.5 text-red-400 hover:bg-red-500/20 transition-all"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
