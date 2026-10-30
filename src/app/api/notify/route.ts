@@ -95,6 +95,18 @@ export async function POST(request: NextRequest) {
         inviteLink: g.invite_link,
       }));
 
+      // Insert in-app notifications for eligible students
+      if (students.length > 0) {
+        const notifications = students.map((s) => ({
+          student_id: s.id,
+          title: `New Drive: ${typedJob.company_name}`,
+          message: `${typedJob.company_name} is hiring for ${typedJob.title}. Click to review requirements and apply.`,
+          type: "JOB_ALERT" as const,
+          link_url: typedJob.application_url,
+        }));
+        await admin.from("student_notifications").insert(notifications);
+      }
+
       return ok({
         emailResult,
         waMessage,
@@ -114,6 +126,18 @@ export async function POST(request: NextRequest) {
       const unappliedStudents = (unappliedApps || [])
         .map((a: { student: Profile }) => a.student)
         .filter(Boolean) as Profile[];
+
+      // Insert in-app notifications for unapplied students
+      if (unappliedStudents.length > 0) {
+        const notifications = unappliedStudents.map((s) => ({
+          student_id: s.id,
+          title: `Action Required: Apply for ${typedJob.company_name}`,
+          message: `You have not applied for ${typedJob.company_name} (${typedJob.title}) yet. Please submit your application before the deadline.`,
+          type: "REMINDER" as const,
+          link_url: typedJob.application_url,
+        }));
+        await admin.from("student_notifications").insert(notifications);
+      }
 
       // Send reminder emails
       let emailResult = { sent: 0, total: 0 };

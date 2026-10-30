@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
           targetStudents = command.studentIds;
         } else {
           // Send to all students (optionally filtered by department)
-          let query = admin.from("profiles").select("id").eq("role", "student").eq("is_active", true);
+          let query = admin.from("profiles").select("id").eq("role", "student").neq("is_active", false);
           if (command.department && command.department !== "ALL") {
             query = query.eq("department", command.department);
           }
