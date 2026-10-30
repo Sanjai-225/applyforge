@@ -37,35 +37,11 @@ export function AdminHelpChat({ threads, onRefresh, adminId }: AdminHelpChatProp
 
   const activeThread = threads.find((t) => t.student_id === selectedThread);
 
-  useEffect(() => {
-    if (selectedThread) {
-      loadMessages(selectedThread);
-    }
-  }, [selectedThread]);
+  const threadMessages = activeThread?.messages || messages;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  async function loadMessages(studentId: string) {
-    setLoadingMsgs(true);
-    // We fetch from snapshot - messages are embedded in help_threads data
-    // For now we use the refresh pattern
-    const { get } = await import("@/lib/client");
-    const res = await get<{ help_messages: HelpMessage[] }>(
-      `/api/snapshot?scope=admin&studentId=${studentId}`
-    );
-    if (res.ok && res.data) {
-      // Filter help_messages for this student from snapshot
-      const allData = res.data as Record<string, unknown>;
-      const studentDetail = allData.student_detail as { student: unknown; applications: unknown } | undefined;
-      // Get messages directly
-      const msgRes = await get<HelpMessage[]>(`/api/snapshot?scope=admin`);
-      // Actually, let's just fetch the snapshot and extract
-      setMessages([]); // Will be populated on next refresh
-    }
-    setLoadingMsgs(false);
-  }
+  }, [threadMessages, selectedThread]);
 
   async function handleSend() {
     if (!text.trim() || !selectedThread) return;
@@ -181,22 +157,45 @@ export function AdminHelpChat({ threads, onRefresh, adminId }: AdminHelpChatProp
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-              {loadingMsgs ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-surface-500" />
+              {(!threadMessages || threadMessages.length === 0) ? (
+                <div className="flex flex-col items-center justify-center h-full text-surface-500 py-12">
+                  <MessageCircle className="h-10 w-10 mb-2 opacity-30" />
+                  <p className="text-sm">No messages in this thread yet</p>
                 </div>
               ) : (
                 <>
-                  <div className="text-center py-4">
-                    <p className="text-xs text-surface-500 bg-surface-800/50 inline-block px-3 py-1 rounded-full">
-                      Last message: {activeThread?.last_message_at ? new Date(activeThread.last_message_at).toLocaleString() : "N/A"}
-                    </p>
-                  </div>
-                  <div className="bg-surface-800/50 rounded-xl p-4 text-center">
-                    <p className="text-xs text-surface-400">
-                      {activeThread?.last_message || "No messages in this thread"}
-                    </p>
-                  </div>
+                  {threadMessages.map((msg) => {
+                    const isAdmin = msg.sender_role === "admin";
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-md ${
+                            isAdmin
+                              ? "bg-primary-600 text-white rounded-br-none"
+                              : "bg-surface-800 text-surface-200 border border-surface-700 rounded-bl-none"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.message}</p>
+                          <div
+                            className={`flex items-center gap-1 mt-1 text-[10px] ${
+                              isAdmin ? "text-primary-200 justify-end" : "text-surface-400"
+                            }`}
+                          >
+                            <span>
+                              {new Date(msg.created_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            {isAdmin && <span>✓</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </>
               )}

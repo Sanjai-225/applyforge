@@ -13,6 +13,33 @@ function getCleanKey(key?: string): string {
   return key.trim().replace(/^['"]|['"]$/g, "");
 }
 
+async function getUserRole(userId: string, roleCookie?: string): Promise<string> {
+  if (roleCookie === "admin" || roleCookie === "student") {
+    return roleCookie;
+  }
+  const serviceKey = getCleanKey(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const url = getCleanUrl();
+  if (serviceKey && url) {
+    try {
+      const res = await fetch(`${url}/rest/v1/profiles?id=eq.${userId}&select=role`, {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows && rows[0]?.role) {
+          return rows[0].role;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return "student";
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -42,20 +69,19 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+  const roleCookie = request.cookies.get("user_role")?.value;
 
   // ─── Strict Admin Route Protection ────────────────────
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
     if (!user) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role !== "admin") {
+    const role = await getUserRole(user.id, roleCookie);
+    if (role !== "admin") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    if (!roleCookie) {
+      supabaseResponse.cookies.set("user_role", role, { path: "/", sameSite: "lax" });
     }
   }
 
@@ -64,26 +90,19 @@ export async function middleware(request: NextRequest) {
     if (!user) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role === "admin") {
+    const role = await getUserRole(user.id, roleCookie);
+    if (role === "admin") {
       return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    if (!roleCookie) {
+      supabaseResponse.cookies.set("user_role", role, { path: "/", sameSite: "lax" });
     }
   }
 
   // ─── Redirect logged-in users away from auth pages ────
   if (user && AUTH_PAGES.some((p) => pathname === p)) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role === "admin") {
+    const role = await getUserRole(user.id, roleCookie);
+    if (role === "admin") {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     return NextResponse.redirect(new URL("/dashboard", request.url));

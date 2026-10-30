@@ -259,8 +259,10 @@ export async function POST(request: NextRequest) {
       }
 
       case "SEND_CHAT_MESSAGE": {
+        const targetStudentId = profile.role === "student" ? user.id : (command.studentId || user.id);
+        if (!targetStudentId) throw badRequest("Target student ID is required");
         const msgData = {
-          student_id: command.studentId,
+          student_id: targetStudentId,
           sender_id: user.id,
           sender_role: profile.role,
           message: command.message,

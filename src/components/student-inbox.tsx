@@ -112,7 +112,6 @@ export function StudentHelpChatDrawer({
     setSending(true);
     const res = await post("/api/command", {
       type: "SEND_CHAT_MESSAGE",
-      studentId: messages[0]?.student_id || "self",
       message: text.trim(),
     });
     if (res.ok) {

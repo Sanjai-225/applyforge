@@ -64,6 +64,12 @@ export default function StudentDashboardView() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (data?.profile?.role === "admin") {
+      router.replace("/admin");
+    }
+  }, [data, router]);
+
   async function handleLogout() {
     await post("/api/auth/logout", {});
     router.push("/");
@@ -185,6 +191,16 @@ export default function StudentDashboardView() {
                   </span>
                 )}
               </button>
+
+              {profile.role === "admin" && (
+                <button
+                  onClick={() => router.push("/admin")}
+                  className="flex items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 shadow-md transition-all"
+                >
+                  <Briefcase className="h-3.5 w-3.5" />
+                  <span>Go to Admin Portal</span>
+                </button>
+              )}
 
               {/* User Info */}
               <div className="hidden sm:flex items-center gap-2 rounded-xl bg-surface-800 px-3 py-2">

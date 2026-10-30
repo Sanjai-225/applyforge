@@ -108,6 +108,7 @@ export interface HelpThread {
   last_message_at: string;
   unread_count: number;
   is_resolved: boolean;
+  messages?: HelpMessage[];
 }
 
 export interface AuditLog {

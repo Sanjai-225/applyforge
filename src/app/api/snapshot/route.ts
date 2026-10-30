@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
 
     if (!profile) throw unauthorized("Profile not found");
 
-    if (scope === "student" || profile.role === "student") {
-      return handleStudentSnapshot(admin, profile);
+    if (scope === "admin" || (!scope && profile.role === "admin")) {
+      return handleAdminSnapshot(admin, profile, jobId, studentId);
     }
 
-    if (scope === "admin" || profile.role === "admin") {
-      return handleAdminSnapshot(admin, profile, jobId, studentId);
+    if (scope === "student" || (!scope && profile.role === "student")) {
+      return handleStudentSnapshot(admin, profile);
     }
 
     throw badRequest("Invalid scope");
@@ -190,6 +190,7 @@ async function handleAdminSnapshot(
         last_message_at: threadData.messages[0]?.created_at || "",
         unread_count: threadData.messages.filter((m: any) => m.sender_role === "student" && !m.is_resolved).length,
         is_resolved: threadData.messages.every((m: any) => m.is_resolved),
+        messages: [...threadData.messages].reverse(),
       })
     );
 

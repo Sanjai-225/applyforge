@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { cookies } from "next/headers";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createAdminSupabase } from "@/lib/supabase/admin";
 import { ok, err } from "@/lib/http";
@@ -80,6 +81,15 @@ async function handleRegister(body: unknown) {
     password: data.password,
   });
 
+  const cookieStore = await cookies();
+  cookieStore.set("user_role", "student", {
+    path: "/",
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 7,
+  });
+
   return ok({ redirect: "/dashboard" });
 }
 
@@ -109,13 +119,25 @@ async function handleLogin(body: unknown) {
     .eq("id", authData.user.id)
     .single();
 
-  const redirect = profile?.role === "admin" ? "/admin" : "/dashboard";
+  const role = profile?.role || "student";
+  const redirect = role === "admin" ? "/admin" : "/dashboard";
 
-  return ok({ redirect, role: profile?.role || "student" });
+  const cookieStore = await cookies();
+  cookieStore.set("user_role", role, {
+    path: "/",
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 7,
+  });
+
+  return ok({ redirect, role });
 }
 
 async function handleLogout() {
   const supabase = await createServerSupabase();
   await supabase.auth.signOut();
+  const cookieStore = await cookies();
+  cookieStore.delete("user_role");
   return ok({ redirect: "/" });
 }

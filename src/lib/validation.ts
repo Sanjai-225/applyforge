@@ -102,7 +102,7 @@ export const SendReminderSchema = z.object({
 
 export const SendChatMessageSchema = z.object({
   type: z.literal("SEND_CHAT_MESSAGE"),
-  studentId: z.string().uuid(),
+  studentId: z.string().optional(),
   message: z.string().min(1).max(2000),
 });
 

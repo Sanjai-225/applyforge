@@ -88,6 +88,8 @@ export default function AdminDashboardView() {
       const res = await get<AdminDashboard>(url);
       if (res.ok && res.data) {
         setData(res.data);
+      } else if (!res.ok && (res.error?.toLowerCase().includes("not an admin") || res.error?.toLowerCase().includes("unauthorized"))) {
+        router.push("/admin/login");
       }
       setLoading(false);
     },
@@ -205,10 +207,10 @@ export default function AdminDashboardView() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowJobModal(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-primary-900/30 hover:from-primary-500 hover:to-primary-600 transition-all btn-lift"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-primary-900/30 hover:from-primary-500 hover:to-primary-600 transition-all btn-lift"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Post Job</span>
+              <span>Post Job</span>
             </button>
             <button
               onClick={() => fetchData(selectedJobId, selectedStudentId)}
@@ -292,8 +294,14 @@ export default function AdminDashboardView() {
                   <option value="ALL">All Departments</option>
                   {["CSE", "IT", "AI&DS", "ECE", "EEE", "MECH", "CIVIL"].map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
-                <button onClick={() => handleExport("students")} className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-surface-400 hover:text-white transition-all">
+                <button onClick={() => handleExport("jobs")} className="flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2.5 text-sm text-surface-400 hover:text-white transition-all">
                   <Download className="h-4 w-4" /> Export
+                </button>
+                <button
+                  onClick={() => setShowJobModal(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-primary-500 transition-all btn-lift ml-auto"
+                >
+                  <Plus className="h-4 w-4" /> Post Job
                 </button>
               </div>
 
