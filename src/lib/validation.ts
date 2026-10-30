@@ -113,7 +113,7 @@ export const ResolveHelpThreadSchema = z.object({
 
 export const MarkNotificationReadSchema = z.object({
   type: z.literal("MARK_NOTIFICATION_READ"),
-  notificationId: z.string().uuid(),
+  notificationId: z.string().optional(),
 });
 
 export const CommandSchema = z.discriminatedUnion("type", [

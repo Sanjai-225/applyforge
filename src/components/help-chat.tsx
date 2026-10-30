@@ -43,6 +43,19 @@ export function AdminHelpChat({ threads, onRefresh, adminId }: AdminHelpChatProp
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadMessages, selectedThread]);
 
+  async function handleSelectThread(studentId: string) {
+    setSelectedThread(studentId);
+    const thread = threads.find((t) => t.student_id === studentId);
+    if (thread && thread.unread_count > 0) {
+      thread.unread_count = 0;
+      await post("/api/command", {
+        type: "RESOLVE_HELP_THREAD",
+        studentId,
+      });
+      onRefresh();
+    }
+  }
+
   async function handleSend() {
     if (!text.trim() || !selectedThread) return;
     setSending(true);
@@ -93,7 +106,7 @@ export function AdminHelpChat({ threads, onRefresh, adminId }: AdminHelpChatProp
             filtered.map((thread) => (
               <button
                 key={thread.student_id}
-                onClick={() => setSelectedThread(thread.student_id)}
+                onClick={() => handleSelectThread(thread.student_id)}
                 className={`w-full text-left px-4 py-3 border-b border-surface-800 transition-colors ${
                   selectedThread === thread.student_id
                     ? "bg-primary-600/10 border-l-2 border-l-primary-500"

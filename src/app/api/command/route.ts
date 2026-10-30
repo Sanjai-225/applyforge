@@ -283,11 +283,16 @@ export async function POST(request: NextRequest) {
       }
 
       case "MARK_NOTIFICATION_READ": {
-        const { error } = await admin
+        let query = admin
           .from("student_notifications")
           .update({ is_read: true })
-          .eq("id", command.notificationId)
           .eq("student_id", user.id);
+
+        if (command.notificationId && command.notificationId !== "ALL") {
+          query = query.eq("id", command.notificationId);
+        }
+
+        const { error } = await query;
         if (error) throw badRequest(error.message);
         return ok({ marked: true });
       }

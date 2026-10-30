@@ -51,6 +51,7 @@ export default function StudentDashboardView() {
   } | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showHelpChat, setShowHelpChat] = useState(false);
+  const [helpVisited, setHelpVisited] = useState(false);
 
   const fetchData = useCallback(async () => {
     const res = await get<StudentDashboard>("/api/snapshot?scope=student");
@@ -87,12 +88,35 @@ export default function StudentDashboardView() {
     fetchData();
   }
 
+  async function handleOpenNotifications() {
+    setShowNotifications(true);
+    if (data?.notifications && data.notifications.some((n) => !n.is_read)) {
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              notifications: prev.notifications.map((n) => ({ ...n, is_read: true })),
+            }
+          : prev
+      );
+      await post("/api/command", { type: "MARK_NOTIFICATION_READ" });
+    }
+  }
+
+  function handleOpenHelpChat() {
+    setHelpVisited(true);
+    setShowHelpChat(true);
+  }
+
   if (loading) return <FullPageSpinner />;
   if (!data) return null;
 
   const { profile, kpis, applications, notifications = [], help_messages = [] } = data;
 
   const unreadNotifications = notifications.filter((n) => !n.is_read).length;
+  const unreadHelpCount = helpVisited
+    ? 0
+    : help_messages.filter((m) => m.sender_role === "admin" && !m.is_resolved).length;
 
   // Sort by priority then deadline
   const sortedApps = [...applications].sort((a, b) => {
@@ -170,17 +194,22 @@ export default function StudentDashboardView() {
 
               {/* Help Chat Button */}
               <button
-                onClick={() => setShowHelpChat(true)}
+                onClick={handleOpenHelpChat}
                 className="relative flex items-center gap-1.5 rounded-xl bg-surface-800 border border-surface-700 px-3 py-2 text-sm text-emerald-400 hover:bg-surface-700 transition-all"
                 title="Contact Admin"
               >
                 <MessageCircle className="h-4 w-4" />
                 <span className="hidden sm:inline text-xs">Help</span>
+                {unreadHelpCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {unreadHelpCount > 9 ? "9+" : unreadHelpCount}
+                  </span>
+                )}
               </button>
 
               {/* Notification Bell */}
               <button
-                onClick={() => setShowNotifications(true)}
+                onClick={handleOpenNotifications}
                 className="relative flex items-center justify-center rounded-xl bg-surface-800 border border-surface-700 p-2 text-surface-400 hover:bg-surface-700 hover:text-white transition-all"
                 title="Notifications"
               >
